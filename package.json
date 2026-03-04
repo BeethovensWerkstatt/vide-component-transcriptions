@@ -1,0 +1,30 @@
+{
+  "name": "vide-component-transcriptions",
+  "version": "1.0.0",
+  "description": "Reusable Transcriptions Web Component for rendering different transcriptions side by side.",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "files": [
+    "src/",
+    "dist/",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "npm run build:js && npm run build:css",
+    "build:js": "mkdir -p dist && cp -r src/* dist/",
+    "build:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map",
+    "watch:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map --watch",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "sass": "^1.69.5"
+  },
+  "keywords": [
+    "transcription",
+    "web-component",
+    "MEI",
+    "synoptic"
+  ],
+  "author": "Johannes Kepper",
+  "license": "AGPL-3.0-or-later"
+}
