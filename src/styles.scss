@@ -55,6 +55,48 @@ vide-transcr-content {
   }
 }
 
+// Loading / error states
+.transcr-loading,
+.transcr-error {
+  padding: 2rem;
+
+  code { font-size: 0.9em; }
+}
+
+.transcr-error {
+  color: $brand-color;
+
+  pre {
+    background: $grey-color-light;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow: auto;
+    font-size: 0.85em;
+  }
+}
+
+// genDesc raw JSON view
+.transcr-gendesc {
+  padding: 2rem;
+
+  h2 {
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    color: $text-color;
+  }
+
+  .transcr-json {
+    background: $grey-color-light;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow: auto;
+    font-size: 0.85em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+}
+
 // Synoptic panels layout
 .transcr-view {
   display: flex;

@@ -1,3 +1,5 @@
+const API_BASE = 'http://localhost:8080/exist/apps/api/document';
+
 /**
  * VideTranscrRouter
  * Client-side router using the History API for the Transcriptions SPA island.
@@ -65,9 +67,63 @@ export class VideTranscrRouter {
 
     if (segments.length === 0) {
       this.renderHome();
-    } else {
-      this.renderTranscription(segments[0], segments.slice(1));
+      return;
     }
+
+    const first = segments[0];
+
+    if (first === 'genDesc' && segments.length >= 2) {
+      const genDescId = segments[1];
+      this.loadGenDesc(genDescId);
+      return;
+    }
+
+    this.renderTranscription(first, segments.slice(1));
+  }
+
+  /**
+   * Fetch a genDesc document from the API and render its JSON.
+   * @param {string} genDescId
+   */
+  async loadGenDesc(genDescId) {
+    this.contentEl.setContent(`
+      <div class="transcr-loading">
+        <p>Lade Daten für <code>${this.escapeHtml(genDescId)}</code> …</p>
+      </div>
+    `);
+
+    const url = `${API_BASE}/genDesc/${genDescId}.json`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      const data = await response.json();
+      this.renderGenDesc(genDescId, data);
+    } catch (err) {
+      this.contentEl.setContent(`
+        <div class="transcr-error">
+          <h2>Fehler beim Laden</h2>
+          <p>Konnte <code>${this.escapeHtml(url)}</code> nicht abrufen:</p>
+          <pre>${this.escapeHtml(String(err))}</pre>
+        </div>
+      `);
+    }
+  }
+
+  /**
+   * Render a fetched genDesc document as a pretty-printed JSON string.
+   * @param {string} genDescId
+   * @param {*} data
+   */
+  renderGenDesc(genDescId, data) {
+    this.contentEl.setContent(`
+      <div class="transcr-gendesc">
+        <h2>genDesc: <code>${this.escapeHtml(genDescId)}</code></h2>
+        <pre class="transcr-json">${this.escapeHtml(JSON.stringify(data, null, 2))}</pre>
+      </div>
+    `);
   }
 
   renderHome() {
@@ -105,6 +161,17 @@ export class VideTranscrRouter {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Navigate programmatically to a genDesc transcription view.
+   * @param {string} genDescId
+   */
+  navigateToGenDesc(genDescId) {
+    const path = `/genDesc/${genDescId}`;
+    const url = this.basePath + path;
+    history.pushState({ path }, '', url);
+    this.route(path);
   }
 
   /**
