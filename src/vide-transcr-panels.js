@@ -113,7 +113,154 @@ export class VideTranscrPanels extends HTMLElement {
       return new OSD({ ...OSD_OPTIONS, element: el })
     })
 
+    // Keep panels 0 and 1 in sync with each other
+    this._linkViewers(0, 1)
+
     this._readyResolve()
+  }
+
+  /**
+   * Bidirectionally synchronise two OSD viewers: panning or zooming one
+   * immediately mirrors the action in the other.
+   * @param {number} a  panel index
+   * @param {number} b  panel index
+   */
+  _linkViewers (a, b) {
+    const viewers = this.viewers
+    // -1 means no panel is active; set to a viewer index when pointer is over it
+    let activePanel = -1
+
+    ;[a, b].forEach(idx => {
+      const el = this.querySelector(`#transcr-panel-${idx}`)
+
+      el.addEventListener('pointerenter', () => { activePanel = idx })
+
+      el.addEventListener('pointerleave', (e) => {
+        // During a drag OSD holds pointer capture, so the pointer can leave the
+        // panel's hit-test area while the button is still down.  Keep the panel
+        // active until the gesture actually ends (buttons === 0).
+        if (e.buttons === 0 && activePanel === idx) activePanel = -1
+      })
+
+      // Pointer released inside or outside the panel
+      el.addEventListener('pointerup',     () => { if (activePanel === idx) activePanel = -1 })
+      el.addEventListener('pointercancel', () => { if (activePanel === idx) activePanel = -1 })
+    })
+
+    const makeHandler = (srcIdx, tgtIdx) => () => {
+      // Only sync when the pointer is actually over the source panel.
+      // This prevents the target's own update-viewport (fired because we just
+      // moved it) from bouncing the position back to the source.
+      if (activePanel !== srcIdx) return
+      const src = viewers[srcIdx].viewport
+      const tgt = viewers[tgtIdx].viewport
+      tgt.panTo(src.getCenter(true), true)
+      tgt.zoomTo(src.getZoom(true), null, true)
+    }
+
+    viewers[a].addHandler('update-viewport', makeHandler(a, b))
+    viewers[b].addHandler('update-viewport', makeHandler(b, a))
+  }
+
+  /**
+   * Fetch an SVG and inject it as live DOM nodes into the given panel,
+   * replacing the OSD viewer for that panel.  The SVG remains fully
+   * accessible to JavaScript (querySelector, addEventListener, etc.).
+   * Pan and zoom are handled with native pointer + wheel events.
+   *
+   * @param {number} panelIndex  0, 1, or 2
+   * @param {string} svgUrl
+   */
+  async loadSvg (panelIndex, svgUrl) {
+    await this._ready
+
+    // Tear down the OSD viewer for this panel — it would rasterise the SVG
+    const viewer = this.viewers[panelIndex]
+    if (viewer) {
+      viewer.destroy()
+      this.viewers[panelIndex] = null
+    }
+
+    const panelEl = this.querySelector(`#transcr-panel-${panelIndex}`)
+    if (!panelEl) return
+
+    const res = await fetch(svgUrl)
+    if (!res.ok) throw new Error(`SVG fetch failed: ${res.status} ${res.statusText} — ${svgUrl}`)
+    const svgText = await res.text()
+
+    const svgDoc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    const parseError = svgDoc.querySelector('parsererror')
+    if (parseError) throw new Error(`SVG parse error: ${parseError.textContent}`)
+
+    const svgEl = svgDoc.documentElement
+
+    // Read natural dimensions from viewBox first (most reliable), then attributes
+    const vb = svgEl.viewBox?.baseVal
+    const svgNaturalWidth  = (vb && vb.width  > 0) ? vb.width  : (parseFloat(svgEl.getAttribute('width'))  || 800)
+    const svgNaturalHeight = (vb && vb.height > 0) ? vb.height : (parseFloat(svgEl.getAttribute('height')) || 600)
+
+    // Pin the SVG to its coordinate-space dimensions so transform:scale() is the
+    // sole driver of rendered size (avoids fights with CSS percentage sizing)
+    svgEl.setAttribute('width',  svgNaturalWidth)
+    svgEl.setAttribute('height', svgNaturalHeight)
+    svgEl.style.cssText = 'display:block;transform-origin:0 0;user-select:none'
+
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;cursor:grab'
+    wrapper.appendChild(svgEl)
+    panelEl.innerHTML = ''
+    panelEl.appendChild(wrapper)
+
+    // --- pan / zoom state ---
+    // scale = 1 means the SVG renders at its natural coordinate-space size.
+    // initialScale makes the SVG fill the container height ("100%").
+    // MIN_SCALE → 50% of that; MAX_SCALE → 500% of that (5×).
+    const initialScale = wrapper.clientHeight / svgNaturalHeight
+    const MIN_SCALE = 0.5 * initialScale
+    const MAX_SCALE = 5.0 * initialScale
+    let tx = 0, ty = 0, scale = initialScale
+    let dragStartX = 0, dragStartY = 0, dragStartTx = 0, dragStartTy = 0
+
+    const applyTransform = () => {
+      svgEl.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`
+    }
+
+    applyTransform() // render at initial scale immediately
+
+    // Zoom around the pointer position
+    wrapper.addEventListener('wheel', (e) => {
+      e.preventDefault()
+      const rawFactor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * rawFactor))
+      // Derive the actual factor after clamping so tx/ty stay consistent
+      const factor = newScale / scale
+      if (factor === 1) return   // already at a limit, nothing to do
+      const rect = wrapper.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      tx = mx - factor * (mx - tx)
+      ty = my - factor * (my - ty)
+      scale = newScale
+      applyTransform()
+    }, { passive: false })
+
+    // Drag to pan
+    wrapper.addEventListener('pointerdown', (e) => {
+      wrapper.setPointerCapture(e.pointerId)
+      wrapper.style.cursor = 'grabbing'
+      dragStartX = e.clientX; dragStartY = e.clientY
+      dragStartTx = tx; dragStartTy = ty
+    })
+
+    wrapper.addEventListener('pointermove', (e) => {
+      if (e.buttons === 0) return
+      tx = dragStartTx + (e.clientX - dragStartX)
+      ty = dragStartTy + (e.clientY - dragStartY)
+      applyTransform()
+    })
+
+    wrapper.addEventListener('pointerup',     () => { wrapper.style.cursor = 'grab' })
+    wrapper.addEventListener('pointercancel', () => { wrapper.style.cursor = 'grab' })
   }
 
   /**
@@ -142,8 +289,52 @@ export class VideTranscrPanels extends HTMLElement {
     const imageY = mmHeight / 2 - xywhCenterMmY
 
     const tileSource = target.replace(/\.(jpg|tif|tiff)$/i, '') + '/info.json'
+    const degrees = -rotation
 
-    return { tileSource, x: imageX, y: imageY, width: fullImageWidthMm, degrees: -rotation }
+    return { tileSource, x: imageX, y: imageY, width: fullImageWidthMm, degrees, mmPerPx }
+  }
+
+  /**
+   * Convert a pixel-space writing-zone rect into an OSD world-space (mm) Rect,
+   * applying the image rotation and offset.
+   *
+   * @param {{ x:number, y:number, w:number, h:number }} rect  full-image px coordinates
+   * @param {{ x:number, y:number, degrees:number, mmPerPx:number }} pos  from calculatePagePosition
+   * @returns {OpenSeadragon.Rect}
+   */
+  calculateRectBounds (rect, pos) {
+    const OSD = window.OpenSeadragon
+    const { x: imgX, y: imgY, degrees, mmPerPx } = pos
+    const rad = degrees * Math.PI / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+
+    // Transform all four corners from px → image-local mm → rotated world mm
+    const corners = [
+      [rect.x,          rect.y],
+      [rect.x + rect.w, rect.y],
+      [rect.x + rect.w, rect.y + rect.h],
+      [rect.x,          rect.y + rect.h]
+    ].map(([px, py]) => {
+      const lx = px * mmPerPx
+      const ly = py * mmPerPx
+      return {
+        x: imgX + lx * cos - ly * sin,
+        y: imgY + lx * sin + ly * cos
+      }
+    })
+
+    const xs = corners.map(c => c.x)
+    const ys = corners.map(c => c.y)
+    const minX = Math.min(...xs)
+    const minY = Math.min(...ys)
+    const w    = Math.max(...xs) - minX
+    const h    = Math.max(...ys) - minY
+
+    // Add 10% padding on each side
+    const pw = w * 0.1
+    const ph = h * 0.1
+    return new OSD.Rect(minX - pw, minY - ph, w + 2 * pw, h + 2 * ph)
   }
 
   /**
@@ -152,13 +343,15 @@ export class VideTranscrPanels extends HTMLElement {
    *
    * @param {number} panelIndex  0, 1, or 2
    * @param {{ image: string, px: {width:number,height:number}, mm: {width:number,height:number} }} page
+   * @param {{ rect?: {x:number,y:number,w:number,h:number}, opacity?: number }} [options]
    */
-  async loadPageImage (panelIndex, page) {
+  async loadPageImage (panelIndex, page, { rect = null, opacity = 1 } = {}) {
     await this._ready
     const viewer = this.viewers[panelIndex]
     if (!viewer) return
 
-    const { tileSource, x, y, width, degrees } = this.calculatePagePosition(page)
+    const pos = this.calculatePagePosition(page)
+    const { tileSource, x, y, width, degrees } = pos
     const OSD = window.OpenSeadragon
 
     viewer.addTiledImage({
@@ -167,11 +360,12 @@ export class VideTranscrPanels extends HTMLElement {
       y,
       width,
       degrees,
-      success: () => {
-        viewer.viewport.fitBounds(
-          new OSD.Rect(0, 0, page.mm.width, page.mm.height),
-          true
-        )
+      success: ({ item }) => {
+        if (opacity !== 1) item.setOpacity(opacity)
+        const bounds = rect
+          ? this.calculateRectBounds(rect, pos)
+          : new OSD.Rect(0, 0, page.mm.width, page.mm.height)
+        viewer.viewport.fitBounds(bounds, true)
       }
     })
   }

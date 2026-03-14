@@ -193,11 +193,19 @@ export class VideTranscrRouter {
       const panelsEl = this.contentEl.querySelector('vide-transcr-panels');
       panelsEl.setTitle(`${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`);
 
-      // Load each genDesc writing zone's page image into the corresponding panel
+      // Panel 0: facsimile zoomed to the writing-zone rect, full opacity
+      // Panel 1: same facsimile, 50% opacity (overlay comparison use case)
+      // Panel 2: annotated transcription SVG as live DOM nodes
       const writingZones = genDescData.writingZones ?? [];
-      writingZones.forEach((wzEntry, i) => {
-        if (i < 3) panelsEl.loadPageImage(i, wzEntry.page);
-      });
+      const firstWz = writingZones[0];
+      if (firstWz) {
+        const rect = firstWz.rect ?? null;
+        panelsEl.loadPageImage(0, firstWz.page, { rect });
+        panelsEl.loadPageImage(1, firstWz.page, { rect, opacity: 0.5 });
+      }
+
+      const svgUrl = genDescData.at?.renderedSvg;
+      if (svgUrl) panelsEl.loadSvg(2, svgUrl);
     } catch (err) {
       this.renderError(`Fehler beim Laden`, err);
     }
