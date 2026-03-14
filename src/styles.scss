@@ -97,31 +97,74 @@ vide-transcr-content {
   }
 }
 
-// Synoptic panels layout
-.transcr-view {
+// Writing-zone view wrapper (hosts <vide-transcr-panels>)
+.transcr-wz-view {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem;
+  overflow: hidden;
+}
 
-  h2 {
-    margin: 0 0 1rem;
-    font-size: 1.2rem;
-    color: $text-color;
+// Three-panel OSD container
+vide-transcr-panels {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+
+  .transcr-panels-header {
+    flex-shrink: 0;
+    padding: 4px 12px;
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+
+    .transcr-panels-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: $text-color;
+    }
   }
 
-  .transcr-panels {
+  .transcr-panels-container {
     display: flex;
+    flex-direction: column;
     flex: 1;
-    gap: 1rem;
+    gap: 4px;
+    background: #333;  // gap colour between panels
+    overflow: hidden;
+  }
+
+  .transcr-panel-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .transcr-panel-label {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #e0e0e0;
+    color: #555;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .transcr-panel {
+    flex: 1;
+    min-height: 0;  // allow flex shrink below content size
+    position: relative;
+    background: #f5f5f5;
     overflow: hidden;
 
-    .transcr-panel {
-      flex: 1;
-      border: 1px solid $grey-color-light;
-      border-radius: 4px;
-      overflow: auto;
-      padding: 1rem;
+    // OSD injects its canvas as a direct child – make it fill the panel
+    > .openseadragon-container {
+      width: 100% !important;
+      height: 100% !important;
     }
   }
 }

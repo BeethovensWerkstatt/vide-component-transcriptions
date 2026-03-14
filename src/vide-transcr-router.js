@@ -179,19 +179,25 @@ export class VideTranscrRouter {
         return;
       }
 
+      // Fetch genDesc data (cached)
       const genDescUrl = `${API_BASE}/genDesc/${genDescId}.json`;
       const genDescData = await fetchCached(genDescUrl);
 
+      // Mount the three-panel OSD viewer
       this.contentEl.setContent(`
-        <div class="transcr-gendesc">
-          <h2>${this.escapeHtml(docId)} · ${this.escapeHtml(wzSpec)}</h2>
-          <p>Seite <strong>${this.escapeHtml(page.surfaceLabel)}</strong>
-             (${this.escapeHtml(page.position)}),
-             Schreibzone <strong>${this.escapeHtml(wz.label)}</strong>
-             — genDescId: <code>${this.escapeHtml(genDescId)}</code></p>
-          <pre class="transcr-json">${this.escapeHtml(JSON.stringify(genDescData, null, 2))}</pre>
+        <div class="transcr-wz-view">
+          <vide-transcr-panels></vide-transcr-panels>
         </div>
       `);
+
+      const panelsEl = this.contentEl.querySelector('vide-transcr-panels');
+      panelsEl.setTitle(`${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`);
+
+      // Load each genDesc writing zone's page image into the corresponding panel
+      const writingZones = genDescData.writingZones ?? [];
+      writingZones.forEach((wzEntry, i) => {
+        if (i < 3) panelsEl.loadPageImage(i, wzEntry.page);
+      });
     } catch (err) {
       this.renderError(`Fehler beim Laden`, err);
     }

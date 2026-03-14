@@ -10,14 +10,18 @@
     "package.json"
   ],
   "scripts": {
-    "build": "npm run build:js && npm run build:css",
+    "build": "npm run build:js && npm run build:css && npm run build:vendor",
     "build:js": "mkdir -p dist && cp -r src/* dist/",
     "build:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map",
+    "build:vendor": "mkdir -p dist/vendor/openseadragon && cp -r node_modules/openseadragon/build/openseadragon/* dist/vendor/openseadragon/",
     "watch:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map --watch",
     "prepare": "npm run build"
   },
   "devDependencies": {
     "sass": "^1.69.5"
+  },
+  "dependencies": {
+    "openseadragon": "^5.0.1"
   },
   "keywords": [
     "transcription",
@@ -26,5 +30,8 @@
     "synoptic"
   ],
   "author": "Johannes Kepper",
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "openseadragon": "^6.0.2"
+  }
 }

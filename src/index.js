@@ -15,6 +15,15 @@
 import { VideTranscr } from './vide-transcr.js';
 import { VideTranscrContent } from './vide-transcr-content.js';
 import { VideTranscrRouter } from './vide-transcr-router.js';
+import { VideTranscrPanels } from './vide-transcr-panels.js';
+
+// Load OpenSeadragon as a plain (non-module) script so it attaches to window.OpenSeadragon.
+// Using a dynamic script tag keeps the import order deterministic for ES modules.
+if (!window.OpenSeadragon) {
+  const script = document.createElement('script');
+  script.src = new URL('./vendor/openseadragon/openseadragon.min.js', import.meta.url).href;
+  document.head.appendChild(script);
+}
 
 // Make VideTranscrRouter globally accessible for programmatic navigation
 window.VideTranscrRouter = VideTranscrRouter;
@@ -27,8 +36,11 @@ if (!customElements.get('vide-transcr')) {
 if (!customElements.get('vide-transcr-content')) {
   customElements.define('vide-transcr-content', VideTranscrContent);
 }
+if (!customElements.get('vide-transcr-panels')) {
+  customElements.define('vide-transcr-panels', VideTranscrPanels);
+}
 
 console.log('[VideTranscr] Component loaded successfully');
 
 // Export for programmatic usage
-export { VideTranscr, VideTranscrContent, VideTranscrRouter };
+export { VideTranscr, VideTranscrContent, VideTranscrPanels, VideTranscrRouter };
