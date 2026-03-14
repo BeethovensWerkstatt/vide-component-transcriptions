@@ -168,3 +168,24 @@ vide-transcr-panels {
     }
   }
 }
+
+svg.pageShapes {
+  path {
+    fill: transparent;
+  }
+
+  g.active path {
+    fill: #ec1e1ebb;
+    &:hover {
+      fill: #ec1b1b;
+    }
+  }
+}
+
+svg.renderedWz {
+  stroke: #000000;
+
+  .rastrum.bounding-box rect {
+    fill: transparent;
+  }
+}

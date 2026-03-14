@@ -163,6 +163,57 @@ export class VideTranscrPanels extends HTMLElement {
   }
 
   /**
+   * Fetch the renderedWz SVG and add it as a live-DOM OSD overlay on the given
+   * panel, positioned to cover exactly the page's mm extent (0,0 → mm.width, mm.height).
+   *
+   * The SVG is wrapped in a <div> that OSD owns and resizes. Inside that div the
+   * SVG is set to width/height 100% so CSS scales it to always fill the container,
+   * while its original viewBox is preserved — so internal shape coordinates remain
+   * correct at every zoom level.
+   *
+   * @param {number} panelIndex
+   * @param {string} svgUrl
+   * @param {{ width:number, height:number }} mm  page mm dimensions
+   */
+  async loadRenderedWzOverlay (panelIndex, svgUrl, mm) {
+    if (!svgUrl) return
+    await this._ready
+    const viewer = this.viewers[panelIndex]
+    if (!viewer) return
+
+    const res = await fetch(svgUrl)
+    if (!res.ok) throw new Error(`renderedWz fetch failed: ${res.status} ${res.statusText} — ${svgUrl}`)
+    const svgText = await res.text()
+
+    const svgDoc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    const parseError = svgDoc.querySelector('parsererror')
+    if (parseError) throw new Error(`renderedWz SVG parse error: ${parseError.textContent}`)
+
+    const svgEl = svgDoc.documentElement
+
+    // Preserve the SVG's natural viewBox (its internal coordinate space).
+    // Make it fill whatever container OSD gives it.
+    svgEl.setAttribute('width',  '100%')
+    svgEl.setAttribute('height', '100%')
+    svgEl.style.cssText = 'display:block'
+    svgEl.classList.add('renderedWz')
+
+    // OSD manages this wrapper div: it sets its CSS position/size to match the
+    // world-space rect at every viewport change. The SVG inside scales with it.
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
+    wrapper.appendChild(svgEl)
+
+    const OSD = window.OpenSeadragon
+
+    viewer.addOverlay({
+      element: wrapper,
+      location: new OSD.Rect(0, 0, mm.width, mm.height),
+      checkResize: false
+    })
+  }
+
+  /**
    * Fetch an SVG and inject it as live DOM nodes into the given panel,
    * replacing the OSD viewer for that panel.  The SVG remains fully
    * accessible to JavaScript (querySelector, addEventListener, etc.).
@@ -335,6 +386,61 @@ export class VideTranscrPanels extends HTMLElement {
     const pw = w * 0.1
     const ph = h * 0.1
     return new OSD.Rect(minX - pw, minY - ph, w + 2 * pw, h + 2 * ph)
+  }
+
+  /**
+   * Fetch the shapes SVG for a page and add it as a live-DOM OSD overlay on
+   * the given panel, perfectly co-registered with the facsimile image.
+   *
+   * The SVG's coordinate space is the full image pixel grid (px.width × px.height).
+   * OSD scales and positions the overlay element to match the tiled image exactly,
+   * so all child elements are addressable and interactive via normal DOM APIs.
+   *
+   * @param {number} panelIndex
+   * @param {{ shapes: string, shapesGroupId?: string, px: {width:number,height:number},
+   *           image: string, mm: {width:number,height:number} }} page
+   */
+  async loadShapesOverlay (panelIndex, page) {
+    if (!page.shapes) return
+    await this._ready
+    const viewer = this.viewers[panelIndex]
+    if (!viewer) return
+
+    const res = await fetch(page.shapes)
+    if (!res.ok) throw new Error(`Shapes fetch failed: ${res.status} ${res.statusText} — ${page.shapes}`)
+    const svgText = await res.text()
+
+    const svgDoc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    const parseError = svgDoc.querySelector('parsererror')
+    if (parseError) throw new Error(`Shapes SVG parse error: ${parseError.textContent}`)
+
+    const svgEl = svgDoc.documentElement
+
+    // Pin the SVG's coordinate space to the full image pixel grid so every
+    // shape coordinate maps 1:1 with the underlying IIIF image pixels.
+    const { width: pxWidth, height: pxHeight } = page.px
+    svgEl.setAttribute('viewBox', `0 0 ${pxWidth} ${pxHeight}`)
+    svgEl.setAttribute('width',  '100%')
+    svgEl.setAttribute('height', '100%')
+    svgEl.style.cssText = 'display:block;overflow:visible'
+    svgEl.classList.add('pageShapes')
+
+    if (page.shapesGroupId) {
+      const groupEl = svgEl.getElementById(page.shapesGroupId)
+      if (groupEl) groupEl.classList.add('active')
+    }
+
+    // World-space rect that matches the tiled image placement exactly.
+    // pos.width = fullImageWidthMm; derive height from the same mmPerPx factor.
+    const pos = this.calculatePagePosition(page)
+    const fullImageHeightMm = pxHeight * pos.mmPerPx
+    const OSD = window.OpenSeadragon
+
+    viewer.addOverlay({
+      element: svgEl,
+      location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, pos.degrees),
+      checkResize: false
+    })
   }
 
   /**

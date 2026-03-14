@@ -201,7 +201,9 @@ export class VideTranscrRouter {
       if (firstWz) {
         const rect = firstWz.rect ?? null;
         panelsEl.loadPageImage(0, firstWz.page, { rect });
+        panelsEl.loadShapesOverlay(0, firstWz.page);
         panelsEl.loadPageImage(1, firstWz.page, { rect, opacity: 0.5 });
+        if (firstWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, firstWz.renderedWz, firstWz.page.mm);
       }
 
       const svgUrl = genDescData.at?.renderedSvg;
