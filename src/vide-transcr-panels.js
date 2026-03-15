@@ -38,7 +38,7 @@ const OSD_OPTIONS = {
   silenceMultiImageWarnings: true
 }
 
-const PANEL_LABELS = ['Transkription 1', 'Transkription 2', 'Transkription 3']
+const PANEL_LABELS = ['Faksimile', 'Diplomatische Transkription', 'Annotierte Transkription']
 
 /**
  * Parse a IIIF image URL that may carry a #xywh=x,y,w,h&rotate=r fragment.
@@ -63,6 +63,12 @@ export class VideTranscrPanels extends HTMLElement {
     // Resolves once OSD viewers have been created
     this._readyResolve = null
     this._ready = new Promise(res => { this._readyResolve = res })
+    // Cross-panel highlighting
+    this._shapeLinks  = null   // { dtId: [shapeId] } from API
+    this._atLinks     = null   // { atId: dtId }     from API (dtLinks in JSON)
+    this._shapesSvgEl = null   // live <svg> from loadShapesOverlay
+    this._dtSvgEl     = null   // live <svg> from loadRenderedWzOverlay
+    this._atSvgEl     = null   // live <svg> from loadSvg
   }
 
   connectedCallback () {
@@ -76,6 +82,11 @@ export class VideTranscrPanels extends HTMLElement {
     this.viewers = []
     // Reset the ready promise in case the element is re-connected
     this._ready = new Promise(res => { this._readyResolve = res })
+    this._shapeLinks = null
+    this._atLinks = null
+    this._shapesSvgEl = null
+    this._dtSvgEl = null
+    this._atSvgEl = null
   }
 
   render () {
@@ -211,6 +222,9 @@ export class VideTranscrPanels extends HTMLElement {
       location: new OSD.Rect(0, 0, mm.width, mm.height),
       checkResize: false
     })
+
+    this._dtSvgEl = svgEl
+    this._tryInitHighlighting()
   }
 
   /**
@@ -255,6 +269,7 @@ export class VideTranscrPanels extends HTMLElement {
     svgEl.setAttribute('width',  svgNaturalWidth)
     svgEl.setAttribute('height', svgNaturalHeight)
     svgEl.style.cssText = 'display:block;transform-origin:0 0;user-select:none'
+    svgEl.classList.add('atTranscription')
 
     const wrapper = document.createElement('div')
     wrapper.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;cursor:grab'
@@ -312,6 +327,98 @@ export class VideTranscrPanels extends HTMLElement {
 
     wrapper.addEventListener('pointerup',     () => { wrapper.style.cursor = 'grab' })
     wrapper.addEventListener('pointercancel', () => { wrapper.style.cursor = 'grab' })
+
+    this._atSvgEl = svgEl
+    this._tryInitHighlighting()
+  }
+
+  /**
+   * Store the dtId→shapeIds map from the API. Triggers highlighting setup once
+   * all three SVGs have also loaded.
+   * @param {Object<string, string[]>} shapeLinks
+   */
+  setShapeLinks (shapeLinks) {
+    this._shapeLinks = shapeLinks
+    this._tryInitHighlighting()
+  }
+
+  setAtLinks (atLinks) {
+    this._atLinks = atLinks
+    this._tryInitHighlighting()
+  }
+
+  _tryInitHighlighting () {
+    if (this._shapeLinks && this._shapesSvgEl && this._dtSvgEl && this._atSvgEl) {
+      this._initHighlighting()
+    }
+  }
+
+  /**
+   * Build a cross-panel element index from the three live SVGs + shapeLinks/atLinks,
+   * then attach mouseenter/mouseleave handlers for hover highlighting.
+   *
+   * Index is built once; hover callbacks are O(k) where k = linked elements.
+   *
+   * ID spaces:
+   *   shapes SVG  – element `id`       matches shapeLinks values
+   *   DT SVG      – element `data-id`  matches shapeLinks keys (= atLinks values)
+   *   AT SVG      – element `data-id`  matches atLinks keys
+   */
+  _initHighlighting () {
+    const shapeLinks = this._shapeLinks   // { dtId: [shapeId] }
+    const atLinks    = this._atLinks      // { atId: dtId } — optional
+    const shapesSvg  = this._shapesSvgEl
+    const dtSvg      = this._dtSvgEl
+    const atSvg      = this._atSvgEl
+
+    // byDtId: dtId → { dtEls, shapeEls, atEls } — all sets of live DOM elements
+    const byDtId = new Map()
+    const ensure = (dtId) => {
+      if (!byDtId.has(dtId)) {
+        byDtId.set(dtId, { dtEls: new Set(), shapeEls: new Set(), atEls: new Set() })
+      }
+      return byDtId.get(dtId)
+    }
+
+    // Populate from shapeLinks: DT elements and their linked shape elements
+    for (const [dtId, shapeIds] of Object.entries(shapeLinks)) {
+      const entry = ensure(dtId)
+      dtSvg.querySelectorAll(`[data-id="${dtId}"]`).forEach(el => entry.dtEls.add(el))
+      for (const sid of shapeIds) {
+        const el = shapesSvg.getElementById(sid)
+        if (el) entry.shapeEls.add(el)
+      }
+    }
+
+    // Populate AT elements linked via atLinks (JSON): atId → dtId
+    if (atLinks) {
+      let atCount = 0
+      for (const [atId, dtId] of Object.entries(atLinks)) {
+        const entry = ensure(dtId)
+        atSvg.querySelectorAll(`[data-id="${atId}"]`).forEach(el => { entry.atEls.add(el); atCount++ })
+      }
+      console.debug(`[vide-transcr] AT highlighting: ${atCount} elements matched from ${Object.keys(atLinks).length} atLinks entries`)
+    } else {
+      console.debug('[vide-transcr] AT highlighting: no atLinks — AT panel will not highlight')
+    }
+
+    // Reverse map: element → precomputed array of all linked elements
+    // (an element may link to multiple dtIds if a shape appears in multiple)
+    const elToLinked = new Map()
+    for (const [, { dtEls, shapeEls, atEls }] of byDtId) {
+      const all = [...dtEls, ...shapeEls, ...atEls]
+      for (const el of all) {
+        if (!elToLinked.has(el)) elToLinked.set(el, new Set())
+        for (const e of all) elToLinked.get(el).add(e)
+      }
+    }
+
+    // Attach hover handlers — O(k) per event, no DOM scanning at runtime
+    for (const [el, linked] of elToLinked) {
+      const arr = [...linked]
+      el.addEventListener('mouseenter', () => arr.forEach(e => e.classList.add('highlighted')))
+      el.addEventListener('mouseleave', () => arr.forEach(e => e.classList.remove('highlighted')))
+    }
   }
 
   /**
@@ -441,6 +548,9 @@ export class VideTranscrPanels extends HTMLElement {
       location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, pos.degrees),
       checkResize: false
     })
+
+    this._shapesSvgEl = svgEl
+    this._tryInitHighlighting()
   }
 
   /**

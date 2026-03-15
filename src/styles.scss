@@ -174,18 +174,60 @@ svg.pageShapes {
     fill: transparent;
   }
 
+  // Elements that carry cross-panel links are in [data-id] groups
+  [data-id]:not([data-id^="bbox-"]) {
+    cursor: pointer;
+  }
+
   g.active path {
     fill: #ec1e1ebb;
-    &:hover {
-      fill: #ec1b1b;
-    }
   }
+
+  // Use !important to beat g.active path specificity.
+  // Cover both cases: shape ID references a <g> (path descendant) or a <path> directly.
+  .highlighted,
+  .highlighted path {
+    fill: rgba(37, 101, 238, 0.9) !important;
+  }
+}
+
+svg.renderedWz .highlighted {
+  fill: rgba(37, 101, 238, 0.9);
+  stroke: #2563ee;
+}
+
+// AT SVG children often carry explicit fill/stroke presentation attributes that
+// override inherited CSS — target descendants directly to ensure highlight shows.
+// Exclude .measure elements: only their barlines should highlight, not everything.
+svg.atTranscription .highlighted:not(.measure),
+svg.atTranscription .highlighted:not(.measure) * {
+  fill: rgba(37, 101, 238, 0.9) !important;
+  stroke: #2563ee !important;
+}
+
+// For measure elements, only the barline paths get the highlight color.
+svg.atTranscription .measure.highlighted .barLine path {
+  fill: rgba(37, 101, 238, 0.9) !important;
+  stroke: #2563ee !important;
 }
 
 svg.renderedWz {
   stroke: #000000;
 
+  // Interactive elements (those that will have cross-panel links)
+  [data-id]:not([data-id^="bbox-"]) {
+    cursor: pointer;
+  }
+
   .rastrum.bounding-box rect {
     fill: transparent;
+  }
+}
+
+// AT transcription — cursor on musical elements now; highlighting will activate
+// once data-corresp attributes are added server-side to the AT SVG.
+svg.atTranscription {
+  [data-id]:not([data-id^="bbox-"]) {
+    cursor: pointer;
   }
 }

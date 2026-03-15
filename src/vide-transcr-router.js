@@ -199,6 +199,7 @@ export class VideTranscrRouter {
       const writingZones = genDescData.writingZones ?? [];
       const firstWz = writingZones[0];
       if (firstWz) {
+        if (firstWz.shapeLinks) panelsEl.setShapeLinks(firstWz.shapeLinks);
         const rect = firstWz.rect ?? null;
         panelsEl.loadPageImage(0, firstWz.page, { rect });
         panelsEl.loadShapesOverlay(0, firstWz.page);
@@ -206,8 +207,9 @@ export class VideTranscrRouter {
         if (firstWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, firstWz.renderedWz, firstWz.page.mm);
       }
 
-      const svgUrl = genDescData.at?.renderedSvg;
-      if (svgUrl) panelsEl.loadSvg(2, svgUrl);
+      const atData = genDescData.at ?? {};
+      if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks);
+      if (atData.renderedSvg) panelsEl.loadSvg(2, atData.renderedSvg);
     } catch (err) {
       this.renderError(`Fehler beim Laden`, err);
     }
