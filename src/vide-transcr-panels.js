@@ -91,9 +91,6 @@ export class VideTranscrPanels extends HTMLElement {
 
   render () {
     this.innerHTML = `
-      <header class="transcr-panels-header">
-        <span class="transcr-panels-title"></span>
-      </header>
       <div class="transcr-panels-container">
         ${[0, 1, 2].map(i => `
           <div class="transcr-panel-wrapper">
@@ -103,12 +100,6 @@ export class VideTranscrPanels extends HTMLElement {
         `).join('')}
       </div>
     `
-  }
-
-  /** Set the main heading text shown above the three panels (e.g. "NK 1/1"). */
-  setTitle (title) {
-    const el = this.querySelector('.transcr-panels-title')
-    if (el) el.textContent = title
   }
 
   _initViewers () {
@@ -390,16 +381,16 @@ export class VideTranscrPanels extends HTMLElement {
       }
     }
 
-    // Populate AT elements linked via atLinks (JSON): atId → dtId
+    // Populate AT elements linked via atLinks (JSON): atId → dtId | [dtId, ...]
     if (atLinks) {
-      let atCount = 0
-      for (const [atId, dtId] of Object.entries(atLinks)) {
-        const entry = ensure(dtId)
-        atSvg.querySelectorAll(`[data-id="${atId}"]`).forEach(el => { entry.atEls.add(el); atCount++ })
+      for (const [atId, dtIds] of Object.entries(atLinks)) {
+        const dtIdArray = Array.isArray(dtIds) ? dtIds : [dtIds]
+        const atEls = Array.from(atSvg.querySelectorAll(`[data-id="${atId}"]`))
+        for (const dtId of dtIdArray) {
+          const entry = ensure(dtId)
+          atEls.forEach(el => entry.atEls.add(el))
+        }
       }
-      console.debug(`[vide-transcr] AT highlighting: ${atCount} elements matched from ${Object.keys(atLinks).length} atLinks entries`)
-    } else {
-      console.debug('[vide-transcr] AT highlighting: no atLinks — AT panel will not highlight')
     }
 
     // Reverse map: element → precomputed array of all linked elements

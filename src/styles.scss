@@ -97,12 +97,101 @@ vide-transcr-content {
   }
 }
 
-// Writing-zone view wrapper (hosts <vide-transcr-panels>)
+// Writing-zone view wrapper (hosts <vide-transcr-panels> + side panel)
 .transcr-wz-view {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
+
+  // Side panel floats over the panels stack (same pattern as facsimile island)
+  .side-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 33%;
+    min-width: 220px;
+    max-width: 80%;
+    background-color: transparent;
+    z-index: 998;
+    display: flex;
+    transition: right 0.3s ease;
+    overflow: visible;
+
+    &.collapsed {
+      right: calc(-33% + 0px);
+
+      .side-panel-content {
+        opacity: 0;
+        pointer-events: none;
+      }
+    }
+
+    .side-panel-tabs {
+      position: absolute;
+      left: -29.5px;
+      top: -0.5px;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      width: 30px;
+      z-index: 1;
+
+      .side-panel-tab {
+        background-color: rgba(255, 255, 255, 0.7);
+        border: 0.5px solid #333;
+        border-right: none;
+        border-radius: 0.3rem 0 0 0.3rem;
+        padding: 0.8rem 0.3rem;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        min-height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .tab-label {
+          writing-mode: vertical-rl;
+          transform: rotate(180deg);
+          color: #666;
+          font-size: 0.9rem;
+          font-weight: 500;
+          letter-spacing: 0.05em;
+          white-space: nowrap;
+        }
+
+        &:hover {
+          background-color: rgba(255, 255, 255, 0.9);
+          .tab-label { color: #333; }
+        }
+
+        &.active {
+          background-color: rgba(255, 255, 255, 0.95);
+          border-right: 0.5px solid transparent;
+          z-index: 2;
+          .tab-label { color: #333; }
+        }
+      }
+    }
+
+    .side-panel-content {
+      width: 100%;
+      overflow-y: auto;
+      padding: 16px;
+      background-color: rgba(255, 255, 255, 0.95);
+      border-left: 0.5px solid #333;
+      color: #333;
+      transition: opacity 0.3s ease;
+      backdrop-filter: blur(5px);
+
+      .panel-section {
+        display: none;
+        &.active { display: block; }
+      }
+    }
+  }
 }
 
 // Three-panel OSD container
@@ -205,6 +294,10 @@ svg.atTranscription .highlighted:not(.measure) * {
   stroke: #2563ee !important;
 }
 
+svg.atTranscription .bounding-box rect {
+  display: none;
+}
+
 // For measure elements, only the barline paths get the highlight color.
 svg.atTranscription .measure.highlighted .barLine path {
   fill: rgba(37, 101, 238, 0.9) !important;
@@ -229,5 +322,117 @@ svg.renderedWz {
 svg.atTranscription {
   [data-id]:not([data-id^="bbox-"]) {
     cursor: pointer;
+  }
+}
+
+// ── Side-panel writing-zone metadata ─────────────────────────────────────────
+// Mirrors the .zone-metadata rules from vide-component-facsimile.
+
+// Zone navigation list (shown when a sketch has multiple writing zones)
+.wz-nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+
+  .wz-nav-item {
+    padding: 0.3rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+
+    &.active {
+      background-color: #e3f2fd;
+      font-weight: 600;
+      border-left: 3px solid #1976d2;
+      padding-left: calc(0.5rem - 3px);
+    }
+
+    a {
+      color: #1976d2;
+      text-decoration: none;
+      &:hover { text-decoration: underline; }
+    }
+  }
+}
+
+.panel-section[data-panel="info"] {
+  font-size: 0.9rem;
+
+  .metadata-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .metadata-section {
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
+
+    &:first-child {
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .metadata-section-title {
+      margin: 0 0 0.25rem;
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: #555;
+    }
+
+    .metadata-section-content {
+      padding-left: 0.5rem;
+    }
+  }
+
+  .metadata-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    padding-bottom: 0.15rem;
+    line-height: 1.4;
+  }
+
+  .metadata-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+
+    strong { font-weight: 600; color: #333; }
+    .metadata-label { white-space: nowrap; }
+  }
+
+  .supplied-indicator {
+    color: #666;
+    font-size: 0.85em;
+    cursor: help;
+  }
+
+  .no-sketch-props,
+  .no-wz-props,
+  .no-work-relations {
+    color: #999;
+    padding-left: 0.5rem;
+  }
+
+  .work-relation-item {
+    margin-bottom: 0.25rem;
+
+    &:last-child { margin-bottom: 0; }
+
+    .work-title {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 0.1rem;
+
+      strong { color: #1976d2; }
+    }
+
+    .work-target {
+      font-size: 0.85rem;
+      color: #666;
+      padding-left: 1rem;
+    }
   }
 }

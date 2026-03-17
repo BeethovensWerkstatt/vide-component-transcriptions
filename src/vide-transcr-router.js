@@ -187,24 +187,62 @@ export class VideTranscrRouter {
       this.contentEl.setContent(`
         <div class="transcr-wz-view">
           <vide-transcr-panels></vide-transcr-panels>
+          <div class="side-panel" id="side-panel">
+            <div class="side-panel-tabs">
+              <button class="side-panel-tab active" data-panel="info">
+                <span class="tab-label">Info</span>
+              </button>
+            </div>
+            <div class="side-panel-content" id="side-panel-content">
+              <header class="transcription-header">
+                <span class="transcription-header-title">Hallo</span>
+              </header>
+              <div class="panel-section active" data-panel="info"></div>
+            </div>
+          </div>
         </div>
       `);
 
+      this.setupSidePanel();
+
+      // Build ordered list of all overview zones that share this genDescId.
+      // Their position in this list (document order) maps 1:1 to genDescData.writingZones[i].
+      const wzOccurrences = [];
+      pages.forEach((pg, pi) => {
+        (pg.writingZones || []).forEach((z, wi) => {
+          if (z.identifier?.genDescId === genDescId) {
+            wzOccurrences.push({ pageIndex: pi, wzIndex: wi, label: z.label ?? String(wi + 1) });
+          }
+        });
+      });
+
+      // Which occurrence does the current URL address?
+      const activeOccIdx = Math.max(
+        wzOccurrences.findIndex(o => o.pageIndex === coords.pageIndex && o.wzIndex === coords.wzIndex),
+        0
+      );
+
+      this.populateWzMetadata(wz, { docId, wzOccurrences, activeOccIdx });
+
       const panelsEl = this.contentEl.querySelector('vide-transcr-panels');
-      panelsEl.setTitle(`${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`);
+
+      // Set the title in the side-panel header (lives outside <vide-transcr-panels>)
+      const headerTitle = this.contentEl.querySelector('.transcription-header-title');
+      if (headerTitle) headerTitle.textContent = `${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`;
 
       // Panel 0: facsimile zoomed to the writing-zone rect, full opacity
       // Panel 1: same facsimile, 50% opacity (overlay comparison use case)
       // Panel 2: annotated transcription SVG as live DOM nodes
       const writingZones = genDescData.writingZones ?? [];
-      const firstWz = writingZones[0];
-      if (firstWz) {
-        if (firstWz.shapeLinks) panelsEl.setShapeLinks(firstWz.shapeLinks);
-        const rect = firstWz.rect ?? null;
-        panelsEl.loadPageImage(0, firstWz.page, { rect });
-        panelsEl.loadShapesOverlay(0, firstWz.page);
-        panelsEl.loadPageImage(1, firstWz.page, { rect, opacity: 0.5 });
-        if (firstWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, firstWz.renderedWz, firstWz.page.mm);
+      // Use the occurrence index so the correct zone is shown, not always [0]
+      const activeWz = writingZones[activeOccIdx] ?? writingZones[0];
+      if (activeWz) {
+        if (activeWz.shapeLinks) panelsEl.setShapeLinks(activeWz.shapeLinks);
+        const rect = activeWz.rect ?? null;
+        panelsEl.loadPageImage(0, activeWz.page, { rect });
+        panelsEl.loadShapesOverlay(0, activeWz.page);
+        panelsEl.loadPageImage(1, activeWz.page, { rect, opacity: 0.5 });
+        if (activeWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, activeWz.page.mm);
       }
 
       const atData = genDescData.at ?? {};
@@ -252,6 +290,188 @@ export class VideTranscrRouter {
    * @param {string} str
    * @returns {string}
    */
+  /**
+   * Wire up the side-panel tab toggle / collapse behaviour.
+   * Mirrors the same pattern used in vide-component-facsimile.
+   */
+  setupSidePanel() {
+    const sidePanel = this.contentEl.querySelector('#side-panel');
+    const tabs = this.contentEl.querySelectorAll('.side-panel-tab');
+    if (!sidePanel || !tabs.length) return;
+
+    let wasOpen = true;
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (tab.classList.contains('active') && wasOpen) {
+          sidePanel.classList.add('collapsed');
+          wasOpen = false;
+        } else {
+          sidePanel.classList.remove('collapsed');
+          wasOpen = true;
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+        }
+      });
+    });
+  }
+
+  /**
+   * Populate the info panel with metadata for the current writing zone.
+   * @param {Object} zone  Writing-zone entry from the overview JSON
+   * @param {{ docId: string, wzOccurrences: Array, activeOccIdx: number }} [opts]
+   */
+  populateWzMetadata(zone, opts = {}) {
+    const panel = this.contentEl.querySelector('.panel-section[data-panel="info"]');
+    if (!panel) return;
+
+    let html = '';
+
+    // Zone navigation list (only rendered when the sketch has multiple zones)
+    if (opts.wzOccurrences?.length > 1) {
+      html += '<ul class="wz-nav-list">';
+      opts.wzOccurrences.forEach((occ, i) => {
+        const isActive = i === opts.activeOccIdx;
+        const href = `${this.basePath}/${opts.docId}/wz${occ.pageIndex + 1}.${occ.label}/`;
+        const label = `Schreibzone ${i + 1} (S. ${occ.pageIndex + 1})`;
+        if (isActive) {
+          html += `<li class="wz-nav-item active"><span>${label}</span></li>`;
+        } else {
+          html += `<li class="wz-nav-item"><a href="${href}" data-spa-link>${label}</a></li>`;
+        }
+      });
+      html += '</ul>';
+    }
+
+    html += this.createWzMetadata(zone);
+    panel.innerHTML = html;
+  }
+
+  /**
+   * Build metadata HTML for a writing zone object.
+   * Mirrors facs createZoneMetadata() but without zone-list navigation.
+   * @param {Object} zone
+   * @returns {string} HTML string
+   */
+  createWzMetadata(zone) {
+    let html = '<div class="metadata-content">';
+
+    // ── Sketch properties ────────────────────────────────────────────────────
+    html += '<div class="metadata-section sketch-properties">';
+    html += '<div class="metadata-section-title">Skizze:</div>';
+
+    if (zone.sketchProps) {
+      const props = zone.sketchProps;
+      html += '<div class="metadata-section-content">';
+
+      html += '<div class="metadata-row">';
+      if (props.staves) {
+        html += `<span class="metadata-item"><strong>${props.staves}</strong> ${props.staves === 1 ? 'System' : 'Systeme'}</span>`;
+      }
+      if (props.atMeasures) {
+        html += `<span class="metadata-item">~<strong>${props.atMeasures}</strong> ${props.atMeasures === 1 ? 'Takt' : 'Takte'}</span>`;
+      }
+      html += '</div>';
+
+      html += '<div class="metadata-row">';
+      if (props.keySig?.val) {
+        const sup = props.keySig.supplied ? ' <span class="supplied-indicator" title="editorisch ergänzt">*</span>' : '';
+        html += `<span class="metadata-item">Vorzeichnung: <strong>${this.formatKeySig(props.keySig.val)}</strong>${sup}</span>`;
+      }
+      if (props.meterSig?.val) {
+        const sup = props.meterSig.supplied ? ' <span class="supplied-indicator" title="editorisch ergänzt">*</span>' : '';
+        html += `<span class="metadata-item">Taktart: <strong>${props.meterSig.val}</strong>${sup}</span>`;
+      }
+      if (props.tempo) {
+        const sup = props.tempo.supplied ? ' <span class="supplied-indicator" title="editorisch ergänzt">*</span>' : '';
+        html += `<span class="metadata-item">Tempo: <strong>${props.tempo.val || '–'}</strong>${sup}</span>`;
+      }
+      html += '</div>';
+
+      html += '</div>';
+    } else {
+      html += '<div class="no-sketch-props">–</div>';
+    }
+    html += '</div>';
+
+    // ── Writing-zone properties ───────────────────────────────────────────────
+    html += '<div class="metadata-section wz-properties">';
+    html += '<div class="metadata-section-title">Schreibzone:</div>';
+
+    if (zone.wzProps) {
+      const wzProps = zone.wzProps;
+      html += '<div class="metadata-section-content"><div class="metadata-row">';
+      if (wzProps.staves) {
+        html += `<span class="metadata-item"><span class="metadata-label">Zeile:</span> <strong>${wzProps.staves}</strong></span>`;
+      }
+      if (wzProps.layers?.length > 0) {
+        const lbl = wzProps.layers.length === 1 ? 'Schreibschicht' : 'Schreibschichten';
+        html += `<span class="metadata-item"><span class="metadata-label">${lbl}:</span> <strong>${wzProps.layers.length}</strong></span>`;
+      }
+      if (wzProps.metaNavigation)    html += `<span class="metadata-item"><span class="metadata-label">Verweiszeichen:</span> <strong>✓</strong></span>`;
+      if (wzProps.metaClarification) html += `<span class="metadata-item"><span class="metadata-label">Erläuterungen:</span> <strong>✓</strong></span>`;
+      if (wzProps.otherMeta)         html += `<span class="metadata-item"><span class="metadata-label">Sonstige Metatexte:</span> <strong>✓</strong></span>`;
+      html += '</div></div>';
+    } else {
+      html += '<div class="no-wz-props">–</div>';
+    }
+    html += '</div>';
+
+    // ── Work relations ────────────────────────────────────────────────────────
+    html += '<div class="metadata-section work-relations">';
+    html += '<div class="metadata-section-title">Mögliche Werkbezüge:</div>';
+    html += '<div class="metadata-section-content">';
+
+    if (zone.workRelations?.length > 0) {
+      // Group by work (opus + title)
+      const grouped = new Map();
+      zone.workRelations.forEach(rel => {
+        const key = `${rel.opus || ''}|${rel.work || ''}`;
+        if (!grouped.has(key)) grouped.set(key, { opus: rel.opus, work: rel.work, targets: [] });
+        grouped.get(key).targets.push(rel);
+      });
+
+      grouped.forEach(group => {
+        html += '<div class="work-relation-item">';
+        if (group.opus || group.work) {
+          html += '<div class="work-title">';
+          if (group.opus) html += `<strong>${this.escapeHtml(group.opus)}</strong> `;
+          if (group.work) html += this.escapeHtml(group.work);
+          html += '</div>';
+        }
+        group.targets.forEach(rel => {
+          const t = rel.target;
+          if (!t) return;
+          let text = '';
+          const mdivPos = t.mdivPos || t.start?.mdivPos || t.end?.mdivPos;
+          const mvt = mdivPos ? `${mdivPos}. Satz` : '';
+          if (t.start && t.end) {
+            text = mvt ? `${mvt}, T. ${t.start.label}–${t.end.label}` : `T. ${t.start.label}–${t.end.label}`;
+          } else if (t.name === 'measure' && t.label) {
+            text = mvt ? `${mvt}, T. ${t.label}` : `T. ${t.label}`;
+          } else if (t.name === 'mdiv') {
+            text = (t.mdivLabel?.trim()) ? t.mdivLabel : (t.label ? `${t.label}. Satz` : mvt);
+          }
+          if (text) html += `<div class="work-target">${this.escapeHtml(text)}</div>`;
+        });
+        html += '</div>';
+      });
+    } else {
+      html += '<div class="no-work-relations">–</div>';
+    }
+
+    html += '</div></div>';
+    html += '</div>'; // .metadata-content
+    return html;
+  }
+
+  /** Format a key-signature value like '3f' → '3♭', '2s' → '2♯'. */
+  formatKeySig(keySig) {
+    if (keySig === '0') return '0';
+    const match = keySig.match(/^(\d+)([fs])$/);
+    if (!match) return keySig;
+    return `${match[1]}${match[2] === 'f' ? '♭' : '♯'}`;
+  }
+
   escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
