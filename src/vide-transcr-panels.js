@@ -166,18 +166,17 @@ export class VideTranscrPanels extends HTMLElement {
 
   /**
    * Fetch the renderedWz SVG and add it as a live-DOM OSD overlay on the given
-   * panel, positioned to cover exactly the page's mm extent (0,0 → mm.width, mm.height).
+   * panel, co-registered with the facsimile image – including any IIIF rotation.
    *
-   * The SVG is wrapped in a <div> that OSD owns and resizes. Inside that div the
-   * SVG is set to width/height 100% so CSS scales it to always fill the container,
-   * while its original viewBox is preserved — so internal shape coordinates remain
-   * correct at every zoom level.
+   * The DT SVG's internal coordinate space covers the writing-zone crop in mm.
+   * We map that crop to OSD world space with the same rotation applied to the
+   * tiled image, so the overlay stays pixel-accurate at all zoom levels.
    *
    * @param {number} panelIndex
    * @param {string} svgUrl
-   * @param {{ width:number, height:number }} mm  page mm dimensions
+   * @param {{ image:string, px:{width:number,height:number}, mm:{width:number,height:number} }} page
    */
-  async loadRenderedWzOverlay (panelIndex, svgUrl, mm) {
+  async loadRenderedWzOverlay (panelIndex, svgUrl, page) {
     if (!svgUrl) return
     await this._ready
     const viewer = this.viewers[panelIndex]
@@ -197,6 +196,7 @@ export class VideTranscrPanels extends HTMLElement {
     // Make it fill whatever container OSD gives it.
     svgEl.setAttribute('width',  '100%')
     svgEl.setAttribute('height', '100%')
+    svgEl.setAttribute('preserveAspectRatio', 'none')
     svgEl.style.cssText = 'display:block'
     svgEl.classList.add('renderedWz')
 
@@ -208,9 +208,24 @@ export class VideTranscrPanels extends HTMLElement {
 
     const OSD = window.OpenSeadragon
 
+    // Determine the world-space placement of the crop (xywh), applying the same
+    // rotation that loadPageImage applies to the tiled image.
+    // For rotation=0 this reduces to OSD.Rect(0, 0, mm.width, mm.height).
+    const { xywh } = parseImageUrl(page.image)
+    const pos = this.calculatePagePosition(page)
+    const { x: imgX, y: imgY, degrees, mmPerPx } = pos
+    const { width: mmWidth, height: mmHeight } = page.mm
+    const rad = degrees * Math.PI / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    const lx = xywh.x * mmPerPx
+    const ly = xywh.y * mmPerPx
+    const cropX = imgX + lx * cos - ly * sin
+    const cropY = imgY + lx * sin + ly * cos
+
     viewer.addOverlay({
       element: wrapper,
-      location: new OSD.Rect(0, 0, mm.width, mm.height),
+      location: new OSD.Rect(cropX, cropY, mmWidth, mmHeight, degrees),
       checkResize: false
     })
 
@@ -520,7 +535,10 @@ export class VideTranscrPanels extends HTMLElement {
     svgEl.setAttribute('viewBox', `0 0 ${pxWidth} ${pxHeight}`)
     svgEl.setAttribute('width',  '100%')
     svgEl.setAttribute('height', '100%')
-    svgEl.style.cssText = 'display:block;overflow:visible'
+    // Override any baked-in preserveAspectRatio (e.g. "xMidYMid meet") so the
+    // SVG fills its OSD overlay container edge-to-edge rather than centering
+    // itself — otherwise pixel-rounding of the container causes a positional offset.
+    svgEl.setAttribute('preserveAspectRatio', 'none')
     svgEl.classList.add('pageShapes')
 
     if (page.shapesGroupId) {
@@ -534,8 +552,20 @@ export class VideTranscrPanels extends HTMLElement {
     const fullImageHeightMm = pxHeight * pos.mmPerPx
     const OSD = window.OpenSeadragon
 
+    // OSD silently drops Rect.degrees for overlays (it's stripped in Overlay._init).
+    // OSD also clears transform on the element we pass to addOverlay on every viewport
+    // update. So: pass a wrapper div as the OSD element, then apply the CSS rotation
+    // to the SVG inside — OSD won't touch it.
+    // transform-origin:0 0 pivots around the overlay div's CSS top-left, which
+    // corresponds to world (pos.x, pos.y) — exactly the same pivot OSD uses for
+    // the tiled image. This co-registers the shapes with the tilted facsimile.
+    svgEl.style.cssText = `display:block;overflow:visible;transform:rotate(${pos.degrees}deg);transform-origin:50% 50%`
+    const shapesWrapper = document.createElement('div')
+    shapesWrapper.style.cssText = 'width:100%;height:100%;overflow:visible'
+    shapesWrapper.appendChild(svgEl)
+
     viewer.addOverlay({
-      element: svgEl,
+      element: shapesWrapper,
       location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, pos.degrees),
       checkResize: false
     })

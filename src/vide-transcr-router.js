@@ -242,7 +242,7 @@ export class VideTranscrRouter {
         panelsEl.loadPageImage(0, activeWz.page, { rect });
         panelsEl.loadShapesOverlay(0, activeWz.page);
         panelsEl.loadPageImage(1, activeWz.page, { rect, opacity: 0.5 });
-        if (activeWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, activeWz.page.mm);
+        if (activeWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, activeWz.page);
       }
 
       const atData = genDescData.at ?? {};
