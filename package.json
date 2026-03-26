@@ -15,13 +15,12 @@
     "build:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map",
     "build:vendor": "mkdir -p dist/vendor/openseadragon && cp -r node_modules/openseadragon/build/openseadragon/* dist/vendor/openseadragon/",
     "watch:css": "mkdir -p dist && sass src/styles.scss dist/vide-transcr.css --no-source-map --watch",
-    "prepare": "npm run build"
-  },
-  "devDependencies": {
-    "sass": "^1.69.5"
-  },
-  "dependencies": {
-    "openseadragon": "^5.0.1"
+    "lint": "eslint src/**/*.js tests/**/*.js",
+    "lint:fix": "eslint src/**/*.js tests/**/*.js --fix",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "transcription",
@@ -33,5 +32,16 @@
   "license": "AGPL-3.0-or-later",
   "dependencies": {
     "openseadragon": "^6.0.2"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.0",
+    "eslint": "^8.57.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.1.1",
+    "happy-dom": "^20.0.11",
+    "sass": "^1.69.5",
+    "vitest": "^4.0.16"
   }
 }

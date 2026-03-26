@@ -62,13 +62,13 @@ export class VideTranscrPanels extends HTMLElement {
     this.viewers = []
     // Resolves once OSD viewers have been created
     this._readyResolve = null
-    this._ready = new Promise(res => { this._readyResolve = res })
+    this._ready = new Promise(resolve => { this._readyResolve = resolve })
     // Cross-panel highlighting
-    this._shapeLinks  = null   // { dtId: [shapeId] } from API
-    this._atLinks     = null   // { atId: dtId }     from API (dtLinks in JSON)
-    this._shapesSvgEl = null   // live <svg> from loadShapesOverlay
-    this._dtSvgEl     = null   // live <svg> from loadRenderedWzOverlay
-    this._atSvgEl     = null   // live <svg> from loadSvg
+    this._shapeLinks = null // { dtId: [shapeId] } from API
+    this._atLinks = null // { atId: dtId }     from API (dtLinks in JSON)
+    this._shapesSvgEl = null // live <svg> from loadShapesOverlay
+    this._dtSvgEl = null // live <svg> from loadRenderedWzOverlay
+    this._atSvgEl = null // live <svg> from loadSvg
   }
 
   connectedCallback () {
@@ -81,7 +81,7 @@ export class VideTranscrPanels extends HTMLElement {
     this.viewers.forEach(v => v.destroy())
     this.viewers = []
     // Reset the ready promise in case the element is re-connected
-    this._ready = new Promise(res => { this._readyResolve = res })
+    this._ready = new Promise(resolve => { this._readyResolve = resolve })
     this._shapeLinks = null
     this._atLinks = null
     this._shapesSvgEl = null
@@ -145,7 +145,7 @@ export class VideTranscrPanels extends HTMLElement {
       })
 
       // Pointer released inside or outside the panel
-      el.addEventListener('pointerup',     () => { if (activePanel === idx) activePanel = -1 })
+      el.addEventListener('pointerup', () => { if (activePanel === idx) activePanel = -1 })
       el.addEventListener('pointercancel', () => { if (activePanel === idx) activePanel = -1 })
     })
 
@@ -194,7 +194,7 @@ export class VideTranscrPanels extends HTMLElement {
 
     // Preserve the SVG's natural viewBox (its internal coordinate space).
     // Make it fill whatever container OSD gives it.
-    svgEl.setAttribute('width',  '100%')
+    svgEl.setAttribute('width', '100%')
     svgEl.setAttribute('height', '100%')
     svgEl.setAttribute('preserveAspectRatio', 'none')
     svgEl.style.cssText = 'display:block'
@@ -267,12 +267,12 @@ export class VideTranscrPanels extends HTMLElement {
 
     // Read natural dimensions from viewBox first (most reliable), then attributes
     const vb = svgEl.viewBox?.baseVal
-    const svgNaturalWidth  = (vb && vb.width  > 0) ? vb.width  : (parseFloat(svgEl.getAttribute('width'))  || 800)
+    const svgNaturalWidth = (vb && vb.width > 0) ? vb.width : (parseFloat(svgEl.getAttribute('width')) || 800)
     const svgNaturalHeight = (vb && vb.height > 0) ? vb.height : (parseFloat(svgEl.getAttribute('height')) || 600)
 
     // Pin the SVG to its coordinate-space dimensions so transform:scale() is the
     // sole driver of rendered size (avoids fights with CSS percentage sizing)
-    svgEl.setAttribute('width',  svgNaturalWidth)
+    svgEl.setAttribute('width', svgNaturalWidth)
     svgEl.setAttribute('height', svgNaturalHeight)
     svgEl.style.cssText = 'display:block;transform-origin:0 0;user-select:none'
     svgEl.classList.add('atTranscription')
@@ -290,8 +290,8 @@ export class VideTranscrPanels extends HTMLElement {
     const initialScale = wrapper.clientHeight / svgNaturalHeight
     const MIN_SCALE = 0.5 * initialScale
     const MAX_SCALE = 5.0 * initialScale
-    let tx = 0, ty = 0, scale = initialScale
-    let dragStartX = 0, dragStartY = 0, dragStartTx = 0, dragStartTy = 0
+    let tx = 0; let ty = 0; let scale = initialScale
+    let dragStartX = 0; let dragStartY = 0; let dragStartTx = 0; let dragStartTy = 0
 
     const applyTransform = () => {
       svgEl.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`
@@ -306,7 +306,7 @@ export class VideTranscrPanels extends HTMLElement {
       const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * rawFactor))
       // Derive the actual factor after clamping so tx/ty stay consistent
       const factor = newScale / scale
-      if (factor === 1) return   // already at a limit, nothing to do
+      if (factor === 1) return // already at a limit, nothing to do
       const rect = wrapper.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
@@ -331,7 +331,7 @@ export class VideTranscrPanels extends HTMLElement {
       applyTransform()
     })
 
-    wrapper.addEventListener('pointerup',     () => { wrapper.style.cursor = 'grab' })
+    wrapper.addEventListener('pointerup', () => { wrapper.style.cursor = 'grab' })
     wrapper.addEventListener('pointercancel', () => { wrapper.style.cursor = 'grab' })
 
     this._atSvgEl = svgEl
@@ -371,11 +371,11 @@ export class VideTranscrPanels extends HTMLElement {
    *   AT SVG      – element `data-id`  matches atLinks keys
    */
   _initHighlighting () {
-    const shapeLinks = this._shapeLinks   // { dtId: [shapeId] }
-    const atLinks    = this._atLinks      // { atId: dtId } — optional
-    const shapesSvg  = this._shapesSvgEl
-    const dtSvg      = this._dtSvgEl
-    const atSvg      = this._atSvgEl
+    const shapeLinks = this._shapeLinks // { dtId: [shapeId] }
+    const atLinks = this._atLinks // { atId: dtId } — optional
+    const shapesSvg = this._shapesSvgEl
+    const dtSvg = this._dtSvgEl
+    const atSvg = this._atSvgEl
 
     // byDtId: dtId → { dtEls, shapeEls, atEls } — all sets of live DOM elements
     const byDtId = new Map()
@@ -475,10 +475,10 @@ export class VideTranscrPanels extends HTMLElement {
 
     // Transform all four corners from px → image-local mm → rotated world mm
     const corners = [
-      [rect.x,          rect.y],
+      [rect.x, rect.y],
       [rect.x + rect.w, rect.y],
       [rect.x + rect.w, rect.y + rect.h],
-      [rect.x,          rect.y + rect.h]
+      [rect.x, rect.y + rect.h]
     ].map(([px, py]) => {
       const lx = px * mmPerPx
       const ly = py * mmPerPx
@@ -492,8 +492,8 @@ export class VideTranscrPanels extends HTMLElement {
     const ys = corners.map(c => c.y)
     const minX = Math.min(...xs)
     const minY = Math.min(...ys)
-    const w    = Math.max(...xs) - minX
-    const h    = Math.max(...ys) - minY
+    const w = Math.max(...xs) - minX
+    const h = Math.max(...ys) - minY
 
     // Add 10% padding on each side
     const pw = w * 0.1
@@ -533,7 +533,7 @@ export class VideTranscrPanels extends HTMLElement {
     // shape coordinate maps 1:1 with the underlying IIIF image pixels.
     const { width: pxWidth, height: pxHeight } = page.px
     svgEl.setAttribute('viewBox', `0 0 ${pxWidth} ${pxHeight}`)
-    svgEl.setAttribute('width',  '100%')
+    svgEl.setAttribute('width', '100%')
     svgEl.setAttribute('height', '100%')
     // Override any baked-in preserveAspectRatio (e.g. "xMidYMid meet") so the
     // SVG fills its OSD overlay container edge-to-edge rather than centering

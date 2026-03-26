@@ -4,24 +4,20 @@
  * Holds the synoptic transcription panels.
  */
 export class VideTranscrContent extends HTMLElement {
-  constructor() {
-    super();
-  }
-
-  connectedCallback() {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'transcr-content-wrapper';
-    this.appendChild(wrapper);
+  connectedCallback () {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'transcr-content-wrapper'
+    this.appendChild(wrapper)
   }
 
   /**
    * Set the HTML content of the view
    * @param {string} html - HTML content to display
    */
-  setContent(html) {
-    const wrapper = this.querySelector('.transcr-content-wrapper');
+  setContent (html) {
+    const wrapper = this.querySelector('.transcr-content-wrapper')
     if (wrapper) {
-      wrapper.innerHTML = html;
+      wrapper.innerHTML = html
     }
   }
 
@@ -29,7 +25,7 @@ export class VideTranscrContent extends HTMLElement {
    * Get the content wrapper element
    * @returns {HTMLElement}
    */
-  getWrapper() {
-    return this.querySelector('.transcr-content-wrapper');
+  getWrapper () {
+    return this.querySelector('.transcr-content-wrapper')
   }
 }
