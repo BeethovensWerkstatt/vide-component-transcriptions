@@ -38,7 +38,178 @@ const OSD_OPTIONS = {
   silenceMultiImageWarnings: true
 }
 
-const PANEL_LABELS = ['Faksimile', 'Diplomatische Transkription', 'Annotierte Transkription']
+const PANEL_LABELS = ['Ansicht 1', 'Ansicht 2', 'Ansicht 3']
+
+const STEP_LABELS = [
+  'Digitales Faksimile',
+  'Schreibzonenerfassung',
+  'Zeichendeutung',
+  'Schriftbildnormierung',
+  'Textregulierung',
+  'Editorische Ergänzung',
+  'Editorische Eingriffe'
+]
+
+class FluidAnimationController {
+  constructor (svgElement) {
+    this.svgElement = svgElement
+    this.animations = []
+  }
+
+  init () {
+    this.parseAnimations()
+    this.disableAutoAnimation()
+    this.setProgress(0)
+  }
+
+  parseAnimations () {
+    const animateElements = this.svgElement.querySelectorAll('animate, animateTransform')
+
+    animateElements.forEach((element) => {
+      const valuesAttr = element.getAttribute('values')
+      const attributeName = element.getAttribute('attributeName')
+      const targetElement = element.parentElement
+
+      if (!valuesAttr || !attributeName || !targetElement) return
+
+      const values = valuesAttr.split(';').map(v => v.trim())
+      const animationData = {
+        element,
+        targetElement,
+        attributeName,
+        values,
+        type: element.tagName.toLowerCase()
+      }
+
+      if (animationData.type === 'animatetransform') {
+        animationData.transformType = element.getAttribute('type') || 'translate'
+      }
+
+      this.animations.push(animationData)
+    })
+  }
+
+  disableAutoAnimation () {
+    this.animations.forEach(({ element }) => {
+      element.setAttribute('begin', 'indefinite')
+      element.removeAttribute('repeatCount')
+      if (typeof element.endElement === 'function') {
+        try {
+          element.endElement()
+        } catch (_e) {}
+      }
+    })
+  }
+
+  setProgress (progress) {
+    const clamped = Math.max(0, Math.min(1, progress))
+    this.animations.forEach((animation) => {
+      const interpolated = this.interpolateValue(animation, clamped)
+      this.applyValue(animation, interpolated)
+    })
+  }
+
+  interpolateValue (animation, progress) {
+    const { values } = animation
+    const segmentCount = values.length - 1
+    if (segmentCount <= 0) return values[0] || ''
+
+    const scaled = progress * segmentCount
+    const segmentIndex = Math.min(Math.floor(scaled), segmentCount - 1)
+    const segmentProgress = scaled - segmentIndex
+    const startValue = values[segmentIndex]
+    const endValue = values[segmentIndex + 1]
+
+    return this.interpolateBetweenValues(startValue, endValue, segmentProgress, animation)
+  }
+
+  interpolateBetweenValues (startValue, endValue, t, animation) {
+    const { attributeName } = animation
+
+    if (attributeName === 'opacity') return this.interpolateNumbers(startValue, endValue, t)
+    if (attributeName === 'transform' && animation.transformType === 'translate') {
+      return this.interpolateTranslate(startValue, endValue, t)
+    }
+    if (attributeName === 'd') return this.interpolatePathData(startValue, endValue, t)
+    if (attributeName === 'points') return this.interpolatePoints(startValue, endValue, t)
+
+    return t < 0.5 ? startValue : endValue
+  }
+
+  interpolateNumbers (startValue, endValue, t) {
+    const start = parseFloat(startValue) || 0
+    const end = parseFloat(endValue) || 0
+    return (start + (end - start) * t).toString()
+  }
+
+  interpolateTranslate (startValue, endValue, t) {
+    const startParts = this.parseTranslateValues(startValue)
+    const endParts = this.parseTranslateValues(endValue)
+    const x = startParts.x + (endParts.x - startParts.x) * t
+    const y = startParts.y + (endParts.y - startParts.y) * t
+    return `${x} ${y}`
+  }
+
+  parseTranslateValues (value) {
+    const parts = value.trim().split(/\s+/)
+    return {
+      x: parseFloat(parts[0]) || 0,
+      y: parseFloat(parts[1]) || 0
+    }
+  }
+
+  interpolatePathData (startPath, endPath, t) {
+    const numberPattern = /-?[\d.]+/g
+    const startNumbers = startPath.match(numberPattern) || []
+    const endNumbers = endPath.match(numberPattern) || []
+    if (startNumbers.length !== endNumbers.length) return t < 0.5 ? startPath : endPath
+
+    let index = 0
+    return startPath.replace(numberPattern, () => {
+      const startNum = parseFloat(startNumbers[index]) || 0
+      const endNum = parseFloat(endNumbers[index]) || 0
+      index++
+      const interpolated = startNum + (endNum - startNum) * t
+      return Math.round(interpolated * 100) / 100
+    })
+  }
+
+  interpolatePoints (startPoints, endPoints, t) {
+    const startCoords = this.parsePointsString(startPoints)
+    const endCoords = this.parsePointsString(endPoints)
+    if (startCoords.length !== endCoords.length) return t < 0.5 ? startPoints : endPoints
+
+    const interpolated = startCoords.map((startPt, i) => {
+      const endPt = endCoords[i]
+      const x = startPt.x + (endPt.x - startPt.x) * t
+      const y = startPt.y + (endPt.y - startPt.y) * t
+      return `${Math.round(x)},${Math.round(y)}`
+    })
+
+    return interpolated.join(' ')
+  }
+
+  parsePointsString (pointsStr) {
+    const points = []
+    const pairs = pointsStr.trim().split(/\s+/)
+    for (const pair of pairs) {
+      const [xStr, yStr] = pair.split(',')
+      points.push({ x: parseFloat(xStr) || 0, y: parseFloat(yStr) || 0 })
+    }
+    return points
+  }
+
+  applyValue (animation, value) {
+    const { targetElement, attributeName, transformType } = animation
+    if (attributeName === 'transform' && transformType) {
+      targetElement.setAttribute('transform', `${transformType}(${value})`)
+    } else if (attributeName === 'd') {
+      targetElement.setAttribute('d', value)
+    } else {
+      targetElement.setAttribute(attributeName, value)
+    }
+  }
+}
 
 /**
  * Parse a IIIF image URL that may carry a #xywh=x,y,w,h&rotate=r fragment.
@@ -63,11 +234,19 @@ export class VideTranscrPanels extends HTMLElement {
     // Resolves once OSD viewers have been created
     this._readyResolve = null
     this._ready = new Promise(resolve => { this._readyResolve = resolve })
+    this._panelStepValues = [2, 3, 7]
+    this._panelAnimations = [null, null, null]
+    this._baseImageItems = [null, null, null]
+    this._shapesSvgEls = [null, null, null]
+    this._dtSvgEls = [null, null, null]
+    this._ftOverlayEls = [null, null, null]
+    this._activeSliderAnimations = [null, null, null]
+    this._sliderPointerDown = [false, false, false]
     // Cross-panel highlighting
     this._shapeLinks = null // { dtId: [shapeId] } from API
     this._atLinks = null // { atId: dtId }     from API (dtLinks in JSON)
-    this._shapesSvgEl = null // live <svg> from loadShapesOverlay
-    this._dtSvgEl = null // live <svg> from loadRenderedWzOverlay
+    this._shapesSvgEl = null // legacy alias (panel 0)
+    this._dtSvgEl = null // legacy alias (panel 1)
     this._atSvgEl = null // live <svg> from loadSvg
   }
 
@@ -84,6 +263,14 @@ export class VideTranscrPanels extends HTMLElement {
     this._ready = new Promise(resolve => { this._readyResolve = resolve })
     this._shapeLinks = null
     this._atLinks = null
+    this._panelStepValues = [2, 3, 7]
+    this._panelAnimations = [null, null, null]
+    this._baseImageItems = [null, null, null]
+    this._shapesSvgEls = [null, null, null]
+    this._dtSvgEls = [null, null, null]
+    this._ftOverlayEls = [null, null, null]
+    this._activeSliderAnimations = [null, null, null]
+    this._sliderPointerDown = [false, false, false]
     this._shapesSvgEl = null
     this._dtSvgEl = null
     this._atSvgEl = null
@@ -94,12 +281,206 @@ export class VideTranscrPanels extends HTMLElement {
       <div class="transcr-panels-container">
         ${[0, 1, 2].map(i => `
           <div class="transcr-panel-wrapper">
-            <h3 class="transcr-panel-label">${PANEL_LABELS[i]}</h3>
+            <h3 class="transcr-panel-label">
+              <div class="transcr-panel-label-left">
+                <span class="transcr-panel-title">${PANEL_LABELS[i]}</span>
+                <span class="transcr-step-title" data-step-title="${i}">${STEP_LABELS[this._panelStepValues[i] - 1]}</span>
+              </div>
+              <div class="transcr-step-controls">
+                <button type="button" class="transcr-step-btn" data-step-prev="${i}" aria-label="Vorherige Stufe">&lt;</button>
+                <input
+                  class="transcr-step-slider"
+                  data-step-slider="${i}"
+                  type="range"
+                  min="1"
+                  max="7"
+                  step="0.01"
+                  value="${this._panelStepValues[i]}"
+                  list="transcr-steps-${i}"
+                  aria-label="Stufe wählen"
+                >
+                <datalist id="transcr-steps-${i}">
+                  ${[1, 2, 3, 4, 5, 6, 7].map(s => `<option value="${s}"></option>`).join('')}
+                </datalist>
+                <button type="button" class="transcr-step-btn" data-step-next="${i}" aria-label="Nächste Stufe">&gt;</button>
+              </div>
+            </h3>
             <div class="transcr-panel" id="transcr-panel-${i}"></div>
           </div>
         `).join('')}
       </div>
     `
+
+    this._bindStepControls()
+  }
+
+  _bindStepControls () {
+    for (let i = 0; i < 3; i++) {
+      const slider = this.querySelector(`[data-step-slider="${i}"]`)
+      const prevBtn = this.querySelector(`[data-step-prev="${i}"]`)
+      const nextBtn = this.querySelector(`[data-step-next="${i}"]`)
+      if (!slider || !prevBtn || !nextBtn) continue
+
+      slider.addEventListener('pointerdown', () => {
+        this._sliderPointerDown[i] = true
+      })
+
+      const finishPointerDrag = () => {
+        if (!this._sliderPointerDown[i]) return
+        this._sliderPointerDown[i] = false
+        this._setPanelStep(i, this._snapStep(parseFloat(slider.value)))
+      }
+
+      slider.addEventListener('pointerup', finishPointerDrag)
+      slider.addEventListener('pointercancel', finishPointerDrag)
+
+      slider.addEventListener('input', () => {
+        const value = parseFloat(slider.value)
+        this._applyStepValue(i, value, { commit: false, syncUi: true })
+      })
+
+      slider.addEventListener('change', () => {
+        if (this._sliderPointerDown[i]) return
+        this._setPanelStep(i, this._snapStep(parseFloat(slider.value)))
+      })
+
+      prevBtn.addEventListener('click', () => this._stepByButton(i, -1))
+      nextBtn.addEventListener('click', () => this._stepByButton(i, 1))
+    }
+  }
+
+  _snapStep (value) {
+    const rounded = Math.round(value)
+    return Math.max(1, Math.min(7, rounded))
+  }
+
+  _stepByButton (panelIndex, delta) {
+    const current = this._panelStepValues[panelIndex]
+    const target = Math.max(1, Math.min(7, current + delta))
+    if (target === current) return
+    this._animatePanelStep(panelIndex, target)
+  }
+
+  _animatePanelStep (panelIndex, targetStep) {
+    const startStep = this._panelStepValues[panelIndex]
+    const totalSteps = Math.abs(targetStep - startStep)
+    if (totalSteps === 0) return
+
+    if (this._activeSliderAnimations[panelIndex]) {
+      cancelAnimationFrame(this._activeSliderAnimations[panelIndex])
+      this._activeSliderAnimations[panelIndex] = null
+    }
+
+    const slider = this.querySelector(`[data-step-slider="${panelIndex}"]`)
+    const startTime = performance.now()
+    const duration = totalSteps * 2000
+
+    const tick = (now) => {
+      const elapsed = Math.max(0, now - startTime)
+      const t = Math.min(1, elapsed / duration)
+      const current = startStep + (targetStep - startStep) * t
+      this._applyStepValue(panelIndex, current, { commit: false, syncUi: false })
+      if (slider) slider.value = String(current)
+
+      if (t < 1) {
+        this._activeSliderAnimations[panelIndex] = requestAnimationFrame(tick)
+      } else {
+        this._activeSliderAnimations[panelIndex] = null
+        this._setPanelStep(panelIndex, targetStep)
+      }
+    }
+
+    this._activeSliderAnimations[panelIndex] = requestAnimationFrame(tick)
+  }
+
+  _setPanelStep (panelIndex, step) {
+    const clamped = Math.max(1, Math.min(7, step))
+    this._panelStepValues[panelIndex] = clamped
+    this._applyStepValue(panelIndex, clamped, { commit: true, syncUi: true })
+  }
+
+  _updateStepUi (panelIndex, value, snappedStep) {
+    const slider = this.querySelector(`[data-step-slider="${panelIndex}"]`)
+    if (slider) slider.value = String(value)
+
+    const title = this.querySelector(`[data-step-title="${panelIndex}"]`)
+    if (title) title.textContent = STEP_LABELS[(snappedStep || this._snapStep(value)) - 1]
+
+    const prevBtn = this.querySelector(`[data-step-prev="${panelIndex}"]`)
+    const nextBtn = this.querySelector(`[data-step-next="${panelIndex}"]`)
+    const activeStep = snappedStep || this._snapStep(value)
+    if (prevBtn) prevBtn.disabled = activeStep <= 1
+    if (nextBtn) nextBtn.disabled = activeStep >= 7
+  }
+
+  _applyStepValue (panelIndex, rawStep, { commit = false, syncUi = true } = {}) {
+    const step = Math.max(1, Math.min(7, rawStep))
+    const snapped = this._snapStep(step)
+    if (commit) this._panelStepValues[panelIndex] = snapped
+
+    // Facsimile: full visible at steps 1-2, 50% at 3, then fade to 0 by 4.
+    let imageOpacity = 0
+    if (step <= 2) {
+      imageOpacity = 1
+    } else if (step <= 3) {
+      imageOpacity = 1 - 0.5 * (step - 2)
+    } else if (step <= 4) {
+      imageOpacity = 0.5 * (4 - step)
+    }
+
+    // Shapes: hidden at 1, visible at 2, then fade out by 3.
+    let shapesOpacity = 0
+    if (step <= 1) {
+      shapesOpacity = 0
+    } else if (step <= 2) {
+      shapesOpacity = step - 1
+    } else if (step <= 3) {
+      shapesOpacity = 3 - step
+    }
+
+    // FT appears from 2->3 and then runs in five step anchors
+    // (3..7 => 0%, 25%, 50%, 75%, 100%), interpolated while dragging.
+    let ftOpacity = 0
+    let ftProgress = 0
+    if (step > 2 && step < 3) {
+      ftOpacity = step - 2
+    } else if (step >= 3) {
+      ftOpacity = 1
+      const anchors = [0, 0.25, 0.5, 0.75, 1]
+      const anchoredStep = Math.max(0, Math.min(4, step - 3))
+      const lower = Math.floor(anchoredStep)
+      const upper = Math.min(4, Math.ceil(anchoredStep))
+      const localT = anchoredStep - lower
+      ftProgress = anchors[lower] + (anchors[upper] - anchors[lower]) * localT
+    }
+
+    const imageItem = this._baseImageItems[panelIndex]
+    if (imageItem) imageItem.setOpacity(Math.max(0, Math.min(1, imageOpacity)))
+
+    const shapesEl = this._shapesSvgEls[panelIndex]
+    if (shapesEl) {
+      shapesEl.style.opacity = String(Math.max(0, Math.min(1, shapesOpacity)))
+      shapesEl.style.pointerEvents = 'auto'
+    }
+
+    const ftWrapper = this._ftOverlayEls[panelIndex]
+    if (ftWrapper) {
+      ftWrapper.style.opacity = String(Math.max(0, Math.min(1, ftOpacity)))
+      ftWrapper.style.pointerEvents = step >= 3 ? 'auto' : 'none'
+    }
+
+    const controller = this._panelAnimations[panelIndex]
+    if (controller) controller.setProgress(Math.max(0, Math.min(1, ftProgress)))
+
+    if (syncUi) this._updateStepUi(panelIndex, step, commit ? snapped : null)
+  }
+
+  configurePanels ({ defaultSteps = [2, 3, 7] } = {}) {
+    defaultSteps.forEach((step, i) => {
+      if (typeof step === 'number') this._panelStepValues[i] = this._snapStep(step)
+      this._updateStepUi(i, this._panelStepValues[i], this._panelStepValues[i])
+      this._applyStepValue(i, this._panelStepValues[i], { commit: true, syncUi: true })
+    })
   }
 
   _initViewers () {
@@ -117,6 +498,7 @@ export class VideTranscrPanels extends HTMLElement {
 
     // Keep panels 0 and 1 in sync with each other
     this._linkViewers(0, 1)
+    this.configurePanels({ defaultSteps: this._panelStepValues })
 
     this._readyResolve()
   }
@@ -166,17 +548,18 @@ export class VideTranscrPanels extends HTMLElement {
 
   /**
    * Fetch the renderedWz SVG and add it as a live-DOM OSD overlay on the given
-   * panel, co-registered with the facsimile image – including any IIIF rotation.
+   * panel, positioned to cover exactly the page's mm extent (0,0 → mm.width, mm.height).
    *
-   * The DT SVG's internal coordinate space covers the writing-zone crop in mm.
-   * We map that crop to OSD world space with the same rotation applied to the
-   * tiled image, so the overlay stays pixel-accurate at all zoom levels.
+   * The SVG is wrapped in a <div> that OSD owns and resizes. Inside that div the
+   * SVG is set to width/height 100% so CSS scales it to always fill the container,
+   * while its original viewBox is preserved — so internal shape coordinates remain
+   * correct at every zoom level.
    *
    * @param {number} panelIndex
    * @param {string} svgUrl
-   * @param {{ image:string, px:{width:number,height:number}, mm:{width:number,height:number} }} page
+   * @param {{ width:number, height:number }} mm  page mm dimensions
    */
-  async loadRenderedWzOverlay (panelIndex, svgUrl, page) {
+  async loadRenderedWzOverlay (panelIndex, svgUrl, mm) {
     if (!svgUrl) return
     await this._ready
     const viewer = this.viewers[panelIndex]
@@ -196,7 +579,6 @@ export class VideTranscrPanels extends HTMLElement {
     // Make it fill whatever container OSD gives it.
     svgEl.setAttribute('width', '100%')
     svgEl.setAttribute('height', '100%')
-    svgEl.setAttribute('preserveAspectRatio', 'none')
     svgEl.style.cssText = 'display:block'
     svgEl.classList.add('renderedWz')
 
@@ -208,28 +590,55 @@ export class VideTranscrPanels extends HTMLElement {
 
     const OSD = window.OpenSeadragon
 
-    // Determine the world-space placement of the crop (xywh), applying the same
-    // rotation that loadPageImage applies to the tiled image.
-    // For rotation=0 this reduces to OSD.Rect(0, 0, mm.width, mm.height).
-    const { xywh } = parseImageUrl(page.image)
-    const pos = this.calculatePagePosition(page)
-    const { x: imgX, y: imgY, degrees, mmPerPx } = pos
-    const { width: mmWidth, height: mmHeight } = page.mm
-    const rad = degrees * Math.PI / 180
-    const cos = Math.cos(rad)
-    const sin = Math.sin(rad)
-    const lx = xywh.x * mmPerPx
-    const ly = xywh.y * mmPerPx
-    const cropX = imgX + lx * cos - ly * sin
-    const cropY = imgY + lx * sin + ly * cos
-
     viewer.addOverlay({
       element: wrapper,
-      location: new OSD.Rect(cropX, cropY, mmWidth, mmHeight, degrees),
+      location: new OSD.Rect(0, 0, mm.width, mm.height),
       checkResize: false
     })
 
-    this._dtSvgEl = svgEl
+    this._dtSvgEls[panelIndex] = svgEl
+    if (panelIndex === 1) this._dtSvgEl = svgEl
+    this._tryInitHighlighting()
+  }
+
+  async loadFtOverlay (panelIndex, svgUrl, mm) {
+    if (!svgUrl) return
+    await this._ready
+    const viewer = this.viewers[panelIndex]
+    if (!viewer) return
+
+    const res = await fetch(svgUrl)
+    if (!res.ok) throw new Error(`ft SVG fetch failed: ${res.status} ${res.statusText} — ${svgUrl}`)
+    const svgText = await res.text()
+
+    const svgDoc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    const parseError = svgDoc.querySelector('parsererror')
+    if (parseError) throw new Error(`ft SVG parse error: ${parseError.textContent}`)
+
+    const svgEl = svgDoc.documentElement
+    svgEl.setAttribute('width', '100%')
+    svgEl.setAttribute('height', '100%')
+    svgEl.style.cssText = 'display:block'
+    svgEl.classList.add('renderedWz', 'ftTranscription')
+
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = 'width:100%;height:100%;overflow:hidden;opacity:0;pointer-events:none'
+    wrapper.appendChild(svgEl)
+
+    const OSD = window.OpenSeadragon
+    viewer.addOverlay({
+      element: wrapper,
+      location: new OSD.Rect(0, 0, mm.width, mm.height),
+      checkResize: false
+    })
+
+    const controller = new FluidAnimationController(svgEl)
+    controller.init()
+    this._panelAnimations[panelIndex] = controller
+    this._ftOverlayEls[panelIndex] = wrapper
+    this._dtSvgEls[panelIndex] = svgEl
+    if (panelIndex === 1) this._dtSvgEl = svgEl
+    this._applyStepValue(panelIndex, this._panelStepValues[panelIndex], { commit: false, syncUi: true })
     this._tryInitHighlighting()
   }
 
@@ -354,7 +763,9 @@ export class VideTranscrPanels extends HTMLElement {
   }
 
   _tryInitHighlighting () {
-    if (this._shapeLinks && this._shapesSvgEl && this._dtSvgEl && this._atSvgEl) {
+    const hasShapes = this._shapesSvgEls.some(Boolean)
+    const hasDt = this._dtSvgEls.some(Boolean)
+    if (this._shapeLinks && hasShapes && hasDt) {
       this._initHighlighting()
     }
   }
@@ -373,8 +784,8 @@ export class VideTranscrPanels extends HTMLElement {
   _initHighlighting () {
     const shapeLinks = this._shapeLinks // { dtId: [shapeId] }
     const atLinks = this._atLinks // { atId: dtId } — optional
-    const shapesSvg = this._shapesSvgEl
-    const dtSvg = this._dtSvgEl
+    const shapesSvgs = this._shapesSvgEls.filter(Boolean)
+    const dtSvgs = this._dtSvgEls.filter(Boolean)
     const atSvg = this._atSvgEl
 
     // byDtId: dtId → { dtEls, shapeEls, atEls } — all sets of live DOM elements
@@ -389,15 +800,19 @@ export class VideTranscrPanels extends HTMLElement {
     // Populate from shapeLinks: DT elements and their linked shape elements
     for (const [dtId, shapeIds] of Object.entries(shapeLinks)) {
       const entry = ensure(dtId)
-      dtSvg.querySelectorAll(`[data-id="${dtId}"]`).forEach(el => entry.dtEls.add(el))
+      dtSvgs.forEach(dtSvg => {
+        dtSvg.querySelectorAll(`[data-id="${dtId}"]`).forEach(el => entry.dtEls.add(el))
+      })
       for (const sid of shapeIds) {
-        const el = shapesSvg.getElementById(sid)
-        if (el) entry.shapeEls.add(el)
+        shapesSvgs.forEach(shapesSvg => {
+          const el = shapesSvg.getElementById(sid)
+          if (el) entry.shapeEls.add(el)
+        })
       }
     }
 
     // Populate AT elements linked via atLinks (JSON): atId → dtId | [dtId, ...]
-    if (atLinks) {
+    if (atLinks && atSvg) {
       for (const [atId, dtIds] of Object.entries(atLinks)) {
         const dtIdArray = Array.isArray(dtIds) ? dtIds : [dtIds]
         const atEls = Array.from(atSvg.querySelectorAll(`[data-id="${atId}"]`))
@@ -421,6 +836,8 @@ export class VideTranscrPanels extends HTMLElement {
 
     // Attach hover handlers — O(k) per event, no DOM scanning at runtime
     for (const [el, linked] of elToLinked) {
+      if (el.dataset.transcrHighlightBound === '1') continue
+      el.dataset.transcrHighlightBound = '1'
       const arr = [...linked]
       el.addEventListener('mouseenter', () => arr.forEach(e => e.classList.add('highlighted')))
       el.addEventListener('mouseleave', () => arr.forEach(e => e.classList.remove('highlighted')))
@@ -535,11 +952,29 @@ export class VideTranscrPanels extends HTMLElement {
     svgEl.setAttribute('viewBox', `0 0 ${pxWidth} ${pxHeight}`)
     svgEl.setAttribute('width', '100%')
     svgEl.setAttribute('height', '100%')
-    // Override any baked-in preserveAspectRatio (e.g. "xMidYMid meet") so the
-    // SVG fills its OSD overlay container edge-to-edge rather than centering
-    // itself — otherwise pixel-rounding of the container causes a positional offset.
-    svgEl.setAttribute('preserveAspectRatio', 'none')
+    svgEl.style.display = 'block'
+    svgEl.style.overflow = 'visible'
     svgEl.classList.add('pageShapes')
+
+    // Keep the SVG coordinate system stable; apply page-specific correction on
+    // the overlay container so shape IDs and geometry remain unchanged.
+    const overlayEl = document.createElement('div')
+    overlayEl.style.width = '100%'
+    overlayEl.style.height = '100%'
+    overlayEl.style.overflow = 'visible'
+
+    const rotateElem = document.createElement('div')
+    rotateElem.style.width = '100%'
+    rotateElem.style.height = '100%'
+    rotateElem.classList.add('rotateWrapper')
+    const parsed = parseImageUrl(page.image || '')
+    const rotation = Number.isFinite(parsed.rotation)
+      ? -parsed.rotation
+      : -(page?.px?.rotation || 0)
+    rotateElem.style.transform = 'rotate(' + rotation + 'deg)'
+    rotateElem.style.transformOrigin = 'center center'
+    rotateElem.appendChild(svgEl)
+    overlayEl.appendChild(rotateElem)
 
     if (page.shapesGroupId) {
       const groupEl = svgEl.getElementById(page.shapesGroupId)
@@ -552,25 +987,15 @@ export class VideTranscrPanels extends HTMLElement {
     const fullImageHeightMm = pxHeight * pos.mmPerPx
     const OSD = window.OpenSeadragon
 
-    // OSD silently drops Rect.degrees for overlays (it's stripped in Overlay._init).
-    // OSD also clears transform on the element we pass to addOverlay on every viewport
-    // update. So: pass a wrapper div as the OSD element, then apply the CSS rotation
-    // to the SVG inside — OSD won't touch it.
-    // transform-origin:0 0 pivots around the overlay div's CSS top-left, which
-    // corresponds to world (pos.x, pos.y) — exactly the same pivot OSD uses for
-    // the tiled image. This co-registers the shapes with the tilted facsimile.
-    svgEl.style.cssText = `display:block;overflow:visible;transform:rotate(${pos.degrees}deg);transform-origin:50% 50%`
-    const shapesWrapper = document.createElement('div')
-    shapesWrapper.style.cssText = 'width:100%;height:100%;overflow:visible'
-    shapesWrapper.appendChild(svgEl)
-
     viewer.addOverlay({
-      element: shapesWrapper,
-      location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, pos.degrees),
+      element: overlayEl,
+      location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, 0),
       checkResize: false
     })
 
-    this._shapesSvgEl = svgEl
+    this._shapesSvgEls[panelIndex] = svgEl
+    if (panelIndex === 0) this._shapesSvgEl = svgEl
+    this._applyStepValue(panelIndex, this._panelStepValues[panelIndex], { commit: false, syncUi: true })
     this._tryInitHighlighting()
   }
 
@@ -598,11 +1023,13 @@ export class VideTranscrPanels extends HTMLElement {
       width,
       degrees,
       success: ({ item }) => {
+        this._baseImageItems[panelIndex] = item
         if (opacity !== 1) item.setOpacity(opacity)
         const bounds = rect
           ? this.calculateRectBounds(rect, pos)
           : new OSD.Rect(0, 0, page.mm.width, page.mm.height)
         viewer.viewport.fitBounds(bounds, true)
+        this._applyStepValue(panelIndex, this._panelStepValues[panelIndex], { commit: false, syncUi: true })
       }
     })
   }

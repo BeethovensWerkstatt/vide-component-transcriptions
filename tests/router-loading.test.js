@@ -73,7 +73,7 @@ describe('VideTranscrRouter loading flows', () => {
     await router.loadDocument('NK')
 
     const html = router.contentEl.root.innerHTML
-    expect(html).toContain('Notirungsbuch')
+    expect(html).toContain('Notizierungsbuch')
     expect(html).toContain('3 Schreibzonen')
   })
 
