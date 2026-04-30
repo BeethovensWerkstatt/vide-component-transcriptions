@@ -122,6 +122,35 @@ describe('VideTranscrPanels placement using page-one fixture', () => {
     expect(call.element.querySelector('svg.renderedWz')).toBeTruthy()
   })
 
+  it('loadFtOverlay applies configurable rotation around mm pivot', async () => {
+    const panels = document.createElement('vide-transcr-panels')
+    const addOverlay = vi.fn()
+    panels.viewers = [null, { addOverlay }, null]
+    panels._ready = Promise.resolve()
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      text: async () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>'
+    })
+
+    await panels.loadFtOverlay(1, 'https://example.test/ft.svg', PAGE_ONE.mm, {
+      rotation: {
+        angle: 12,
+        pivot: { x: 30.5, y: 58 },
+        invertDirection: true
+      }
+    })
+
+    expect(addOverlay).toHaveBeenCalledTimes(1)
+    const call = addOverlay.mock.calls[0][0]
+    const rotateWrapper = call.element.querySelector('.ftRotateWrapper')
+
+    expect(rotateWrapper).toBeTruthy()
+    expect(rotateWrapper.style.transform).toBe('rotate(-12deg)')
+    expect(rotateWrapper.style.transformOrigin).toContain('10%')
+    expect(rotateWrapper.style.transformOrigin).toContain('25%')
+  })
+
   it('loadPageImage uses bounds and opacity from callback', async () => {
     const panels = document.createElement('vide-transcr-panels')
     panels._ready = Promise.resolve()

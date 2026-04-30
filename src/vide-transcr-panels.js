@@ -45,6 +45,7 @@ const STEP_LABELS = [
   'Schreibzonenerfassung',
   'Zeichendeutung',
   'Schriftbildnormierung',
+  'Lesefolge',
   'Textregulierung',
   'Editorische Ergänzung',
   'Editorische Eingriffe'
@@ -226,6 +227,46 @@ function parseImageUrl (imageUrl) {
   return { target, xywh: { x, y, w, h }, rotation }
 }
 
+/**
+ * Parse rendered SVG files with embedded facsimile + overlay groups.
+ * @param {string} svgText
+ * @returns {{
+ *  iiifBaseUrl: string,
+ *  image: { width: number, height: number, rotationDeg: number } | null,
+ *  writingZoneGroup: SVGElement | null,
+ *  pageMarginGroup: SVGElement | null
+ * }}
+ */
+function preprocessSvgStructure (svgText) {
+  const svgDoc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+  const parseError = svgDoc.querySelector('parsererror')
+  if (parseError) throw new Error(`SVG parse error: ${parseError.textContent}`)
+
+  const imageEl = svgDoc.querySelector('image#facsimile')
+  const rawHref = imageEl
+    ? (imageEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imageEl.getAttribute('href') || '')
+    : ''
+
+  const iiifBaseUrl = rawHref.replace(/\/full\/full\/0\/default\.jpg$/i, '')
+  const width = imageEl ? (parseFloat(imageEl.getAttribute('width')) || 0) : 0
+  const height = imageEl ? (parseFloat(imageEl.getAttribute('height')) || 0) : 0
+
+  const bgUse = svgDoc.querySelector('use#Hintergrund')
+  const styleTransform = bgUse ? (bgUse.getAttribute('style') || '') : ''
+  const rotationMatch = styleTransform.match(/rotate\(([-\d.]+)deg\)/)
+  const rotationDeg = rotationMatch ? (parseFloat(rotationMatch[1]) || 0) : 0
+
+  const writingZone = svgDoc.querySelector('g.writingZone')
+  const pageMargin = svgDoc.querySelector('g.page-margin')
+
+  return {
+    iiifBaseUrl,
+    image: width > 0 && height > 0 ? { width, height, rotationDeg } : null,
+    writingZoneGroup: writingZone ? writingZone.cloneNode(true) : null,
+    pageMarginGroup: pageMargin ? pageMargin.cloneNode(true) : null
+  }
+}
+
 export class VideTranscrPanels extends HTMLElement {
   constructor () {
     super()
@@ -234,7 +275,7 @@ export class VideTranscrPanels extends HTMLElement {
     // Resolves once OSD viewers have been created
     this._readyResolve = null
     this._ready = new Promise(resolve => { this._readyResolve = resolve })
-    this._panelStepValues = [2, 3, 7]
+    this._panelStepValues = [2, 3, 8]
     this._panelAnimations = [null, null, null]
     this._baseImageItems = [null, null, null]
     this._shapesSvgEls = [null, null, null]
@@ -263,7 +304,7 @@ export class VideTranscrPanels extends HTMLElement {
     this._ready = new Promise(resolve => { this._readyResolve = resolve })
     this._shapeLinks = null
     this._atLinks = null
-    this._panelStepValues = [2, 3, 7]
+    this._panelStepValues = [2, 3, 8]
     this._panelAnimations = [null, null, null]
     this._baseImageItems = [null, null, null]
     this._shapesSvgEls = [null, null, null]
@@ -293,14 +334,14 @@ export class VideTranscrPanels extends HTMLElement {
                   data-step-slider="${i}"
                   type="range"
                   min="1"
-                  max="7"
+                  max="8"
                   step="0.01"
                   value="${this._panelStepValues[i]}"
                   list="transcr-steps-${i}"
                   aria-label="Stufe wählen"
                 >
                 <datalist id="transcr-steps-${i}">
-                  ${[1, 2, 3, 4, 5, 6, 7].map(s => `<option value="${s}"></option>`).join('')}
+                  ${[1, 2, 3, 4, 5, 6, 7, 8].map(s => `<option value="${s}"></option>`).join('')}
                 </datalist>
                 <button type="button" class="transcr-step-btn" data-step-next="${i}" aria-label="Nächste Stufe">&gt;</button>
               </div>
@@ -351,12 +392,12 @@ export class VideTranscrPanels extends HTMLElement {
 
   _snapStep (value) {
     const rounded = Math.round(value)
-    return Math.max(1, Math.min(7, rounded))
+    return Math.max(1, Math.min(8, rounded))
   }
 
   _stepByButton (panelIndex, delta) {
     const current = this._panelStepValues[panelIndex]
-    const target = Math.max(1, Math.min(7, current + delta))
+    const target = Math.max(1, Math.min(8, current + delta))
     if (target === current) return
     this._animatePanelStep(panelIndex, target)
   }
@@ -394,7 +435,7 @@ export class VideTranscrPanels extends HTMLElement {
   }
 
   _setPanelStep (panelIndex, step) {
-    const clamped = Math.max(1, Math.min(7, step))
+    const clamped = Math.max(1, Math.min(8, step))
     this._panelStepValues[panelIndex] = clamped
     this._applyStepValue(panelIndex, clamped, { commit: true, syncUi: true })
   }
@@ -410,11 +451,11 @@ export class VideTranscrPanels extends HTMLElement {
     const nextBtn = this.querySelector(`[data-step-next="${panelIndex}"]`)
     const activeStep = snappedStep || this._snapStep(value)
     if (prevBtn) prevBtn.disabled = activeStep <= 1
-    if (nextBtn) nextBtn.disabled = activeStep >= 7
+    if (nextBtn) nextBtn.disabled = activeStep >= 8
   }
 
   _applyStepValue (panelIndex, rawStep, { commit = false, syncUi = true } = {}) {
-    const step = Math.max(1, Math.min(7, rawStep))
+    const step = Math.max(1, Math.min(8, rawStep))
     const snapped = this._snapStep(step)
     if (commit) this._panelStepValues[panelIndex] = snapped
 
@@ -438,18 +479,18 @@ export class VideTranscrPanels extends HTMLElement {
       shapesOpacity = 3 - step
     }
 
-    // FT appears from 2->3 and then runs in five step anchors
-    // (3..7 => 0%, 25%, 50%, 75%, 100%), interpolated while dragging.
+    // FT appears from 2->3 and then runs in six step anchors
+    // (3..8 => 0%, 20%, 40%, 60%, 80%, 100%), interpolated while dragging.
     let ftOpacity = 0
     let ftProgress = 0
     if (step > 2 && step < 3) {
       ftOpacity = step - 2
     } else if (step >= 3) {
       ftOpacity = 1
-      const anchors = [0, 0.25, 0.5, 0.75, 1]
-      const anchoredStep = Math.max(0, Math.min(4, step - 3))
+      const anchors = [0, 0.2, 0.4, 0.6, 0.8, 1]
+      const anchoredStep = Math.max(0, Math.min(5, step - 3))
       const lower = Math.floor(anchoredStep)
-      const upper = Math.min(4, Math.ceil(anchoredStep))
+      const upper = Math.min(5, Math.ceil(anchoredStep))
       const localT = anchoredStep - lower
       ftProgress = anchors[lower] + (anchors[upper] - anchors[lower]) * localT
     }
@@ -475,7 +516,7 @@ export class VideTranscrPanels extends HTMLElement {
     if (syncUi) this._updateStepUi(panelIndex, step, commit ? snapped : null)
   }
 
-  configurePanels ({ defaultSteps = [2, 3, 7] } = {}) {
+  configurePanels ({ defaultSteps = [2, 3, 8] } = {}) {
     defaultSteps.forEach((step, i) => {
       if (typeof step === 'number') this._panelStepValues[i] = this._snapStep(step)
       this._updateStepUi(i, this._panelStepValues[i], this._panelStepValues[i])
@@ -601,7 +642,16 @@ export class VideTranscrPanels extends HTMLElement {
     this._tryInitHighlighting()
   }
 
-  async loadFtOverlay (panelIndex, svgUrl, mm) {
+  /**
+   * Load FT SVG as a live OSD overlay.
+   * Optional rotation uses mm-based pivot coordinates in page space.
+   *
+   * @param {number} panelIndex
+   * @param {string} svgUrl
+   * @param {{ width:number, height:number }} mm
+   * @param {{ rotation?: { angle?: number, pivot?: { x?: number, y?: number }, invertDirection?: boolean } }} [options]
+   */
+  async loadFtOverlay (panelIndex, svgUrl, mm, { rotation = null } = {}) {
     if (!svgUrl) return
     await this._ready
     const viewer = this.viewers[panelIndex]
@@ -623,7 +673,29 @@ export class VideTranscrPanels extends HTMLElement {
 
     const wrapper = document.createElement('div')
     wrapper.style.cssText = 'width:100%;height:100%;overflow:hidden;opacity:0;pointer-events:none'
-    wrapper.appendChild(svgEl)
+
+    const rotateWrapper = document.createElement('div')
+    rotateWrapper.style.width = '100%'
+    rotateWrapper.style.height = '100%'
+    rotateWrapper.classList.add('ftRotateWrapper')
+
+    if (rotation && Number.isFinite(rotation.angle)) {
+      const signedAngle = rotation.invertDirection ? -rotation.angle : rotation.angle
+      const pivotX = Number(rotation?.pivot?.x)
+      const pivotY = Number(rotation?.pivot?.y)
+      const originX = Number.isFinite(pivotX) && mm?.width
+        ? (pivotX / mm.width) * 100
+        : 50
+      const originY = Number.isFinite(pivotY) && mm?.height
+        ? (pivotY / mm.height) * 100
+        : 50
+
+      rotateWrapper.style.transformOrigin = `${originX}% ${originY}%`
+      rotateWrapper.style.transform = `rotate(${signedAngle}deg)`
+    }
+
+    rotateWrapper.appendChild(svgEl)
+    wrapper.appendChild(rotateWrapper)
 
     const OSD = window.OpenSeadragon
     viewer.addOverlay({
@@ -997,6 +1069,111 @@ export class VideTranscrPanels extends HTMLElement {
     if (panelIndex === 0) this._shapesSvgEl = svgEl
     this._applyStepValue(panelIndex, this._panelStepValues[panelIndex], { commit: false, syncUi: true })
     this._tryInitHighlighting()
+  }
+
+  _resetPanelContent (panelIndex) {
+    const viewer = this.viewers[panelIndex]
+    if (!viewer) return
+    viewer.clearOverlays()
+    viewer.world.removeAll()
+    this._baseImageItems[panelIndex] = null
+    this._shapesSvgEls[panelIndex] = null
+    this._dtSvgEls[panelIndex] = null
+    this._ftOverlayEls[panelIndex] = null
+    this._panelAnimations[panelIndex] = null
+  }
+
+  _addStructuredGroupOverlay (panelIndex, page, groupEl, className) {
+    if (!groupEl) return null
+    const viewer = this.viewers[panelIndex]
+    if (!viewer) return null
+
+    const svgNs = 'http://www.w3.org/2000/svg'
+    const { width: pxWidth, height: pxHeight } = page.px
+
+    const svgEl = document.createElementNS(svgNs, 'svg')
+    svgEl.setAttribute('viewBox', `0 0 ${pxWidth} ${pxHeight}`)
+    svgEl.setAttribute('width', '100%')
+    svgEl.setAttribute('height', '100%')
+    svgEl.style.display = 'block'
+    svgEl.style.overflow = 'visible'
+    svgEl.classList.add(className)
+    svgEl.appendChild(groupEl.cloneNode(true))
+
+    const overlayEl = document.createElement('div')
+    overlayEl.style.width = '100%'
+    overlayEl.style.height = '100%'
+    overlayEl.style.overflow = 'visible'
+
+    const rotateElem = document.createElement('div')
+    rotateElem.style.width = '100%'
+    rotateElem.style.height = '100%'
+    rotateElem.classList.add('rotateWrapper')
+    const parsed = parseImageUrl(page.image || '')
+    const rotation = Number.isFinite(parsed.rotation) ? -parsed.rotation : 0
+    rotateElem.style.transform = 'rotate(' + rotation + 'deg)'
+    rotateElem.style.transformOrigin = 'center center'
+    rotateElem.appendChild(svgEl)
+    overlayEl.appendChild(rotateElem)
+
+    const pos = this.calculatePagePosition(page)
+    const fullImageHeightMm = pxHeight * pos.mmPerPx
+    const OSD = window.OpenSeadragon
+    viewer.addOverlay({
+      element: overlayEl,
+      location: new OSD.Rect(pos.x, pos.y, pos.width, fullImageHeightMm, 0),
+      checkResize: false
+    })
+
+    return { svgEl, wrapperEl: overlayEl }
+  }
+
+  /**
+   * Load a structured rendered SVG into all three OSD panels.
+   * Uses the embedded facsimile IIIF link as base image and adds the
+   * writingZone/page-margin groups as DOM SVG overlays.
+   *
+   * @param {string} svgUrl
+   * @returns {Promise<boolean>} true when structured load was applied
+   */
+  async loadStructuredSvgAcrossPanels (svgUrl) {
+    if (!svgUrl) return false
+    await this._ready
+
+    const res = await fetch(svgUrl)
+    if (!res.ok) throw new Error(`SVG fetch failed: ${res.status} ${res.statusText} — ${svgUrl}`)
+    const svgText = await res.text()
+    const pre = preprocessSvgStructure(svgText)
+    if (!pre.iiifBaseUrl || !pre.image) return false
+
+    const { width, height, rotationDeg } = pre.image
+    const page = {
+      image: `${pre.iiifBaseUrl}/full/full/0/default.jpg#xywh=0,0,${width},${height}&rotate=${rotationDeg}`,
+      px: { width, height },
+      mm: { width, height }
+    }
+
+    for (let i = 0; i < 3; i++) {
+      this._resetPanelContent(i)
+      await this.loadPageImage(i, page, { opacity: i === 1 ? 0.5 : 1 })
+
+      const writingOverlay = this._addStructuredGroupOverlay(i, page, pre.writingZoneGroup, 'pageShapes')
+      if (writingOverlay?.svgEl) {
+        this._shapesSvgEls[i] = writingOverlay.svgEl
+        if (i === 0) this._shapesSvgEl = writingOverlay.svgEl
+      }
+
+      const marginOverlay = this._addStructuredGroupOverlay(i, page, pre.pageMarginGroup, 'renderedWz')
+      if (marginOverlay?.wrapperEl) {
+        this._ftOverlayEls[i] = marginOverlay.wrapperEl
+      }
+    }
+
+    this._applyStepValue(0, this._panelStepValues[0], { commit: false, syncUi: true })
+    this._applyStepValue(1, this._panelStepValues[1], { commit: false, syncUi: true })
+    this._applyStepValue(2, this._panelStepValues[2], { commit: false, syncUi: true })
+    this._tryInitHighlighting()
+    return true
   }
 
   /**

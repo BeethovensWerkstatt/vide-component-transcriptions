@@ -48,7 +48,7 @@ describe('panel slider interactions', () => {
     slider.dispatchEvent(new Event('input'))
 
     expect(panels._panelStepValues[0]).toBe(2)
-    expect(title.textContent).toBe('Editorische Ergänzung')
+    expect(title.textContent).toBe('Textregulierung')
     expect(slider.value).toBe('6.2')
   })
 })

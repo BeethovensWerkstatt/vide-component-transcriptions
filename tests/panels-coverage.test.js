@@ -58,7 +58,7 @@ describe('VideTranscrPanels coverage-focused tests', () => {
     expect(panels.viewers).toEqual([])
     expect(panels._shapeLinks).toBe(null)
     expect(panels._atLinks).toBe(null)
-    expect(panels._panelStepValues).toEqual([2, 3, 7])
+    expect(panels._panelStepValues).toEqual([2, 3, 8])
   })
 
   it('clamps and animates steps via buttons', () => {

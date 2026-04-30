@@ -41,7 +41,8 @@ if (!customElements.get('vide-transcr-panels')) {
     setShapeLinks (value) { this.calls.push(['setShapeLinks', value]) }
     loadPageImage (index, page, opts) { this.calls.push(['loadPageImage', index, page, opts]) }
     loadShapesOverlay (index, page) { this.calls.push(['loadShapesOverlay', index, page]) }
-    loadRenderedWzOverlay (index, url, page) { this.calls.push(['loadRenderedWzOverlay', index, url, page]) }
+    loadRenderedWzOverlay (index, url, mm) { this.calls.push(['loadRenderedWzOverlay', index, url, mm]) }
+    loadFtOverlay (index, url, mm, options) { this.calls.push(['loadFtOverlay', index, url, mm, options]) }
     setAtLinks (value) { this.calls.push(['setAtLinks', value]) }
     loadSvg (index, svg) { this.calls.push(['loadSvg', index, svg]) }
   }
@@ -171,6 +172,19 @@ describe('VideTranscrRouter loading flows', () => {
             px: { width: 100, height: 100 },
             mm: { width: 10, height: 10 }
           },
+          systems: [
+            {
+              id: 'sys-1',
+              ft: 'https://example.org/system-ft.svg',
+              rotation: {
+                angle: 12,
+                pivot: {
+                  x: 3,
+                  y: 4
+                }
+              }
+            }
+          ],
           rect: { x: 1, y: 1, width: 5, height: 5 },
           shapeLinks: { a: ['b'] },
           renderedWz: 'https://example.org/rendered.svg'
@@ -195,6 +209,17 @@ describe('VideTranscrRouter loading flows', () => {
     expect(panelsEl).toBeTruthy()
     expect(panelsEl.calls.some(call => call[0] === 'setShapeLinks')).toBe(true)
     expect(panelsEl.calls.some(call => call[0] === 'loadPageImage')).toBe(true)
+    expect(panelsEl.calls.some(call => call[0] === 'loadRenderedWzOverlay')).toBe(true)
+    expect(panelsEl.calls.some(call => call[0] === 'loadFtOverlay')).toBe(true)
+    const ftCall = panelsEl.calls.find(call => call[0] === 'loadFtOverlay')
+    expect(ftCall[2]).toBe('https://example.org/system-ft.svg')
+    expect(ftCall[4]).toEqual({
+      rotation: {
+        angle: 12,
+        pivot: { x: 3, y: 4 },
+        invertDirection: false
+      }
+    })
     expect(panelsEl.calls.some(call => call[0] === 'setAtLinks')).toBe(true)
     expect(panelsEl.calls.some(call => call[0] === 'loadSvg')).toBe(true)
   })

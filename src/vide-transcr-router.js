@@ -7,6 +7,9 @@ const DOCUMENTS = {
   NK: `${API_BASE}/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json`
 }
 
+// Toggle if API rotation direction and OSD rotation direction differ.
+const INVERT_FT_ROTATION_DIRECTION = false
+
 /**
  * VideTranscrRouter
  * Client-side router using the History API for the Transcriptions SPA island.
@@ -242,12 +245,47 @@ export class VideTranscrRouter {
         panelsEl.loadPageImage(0, activeWz.page, { rect })
         panelsEl.loadShapesOverlay(0, activeWz.page)
         panelsEl.loadPageImage(1, activeWz.page, { rect, opacity: 0.5 })
-        if (activeWz.renderedWz) panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, activeWz.page)
+
+        const mm = activeWz.page?.mm
+        if (activeWz.renderedWz && mm) {
+          panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, mm)
+        }
+
+        // FT must come from API-provided fields, preferably systems[].ft.
+        const firstSystem = Array.isArray(activeWz.systems)
+          ? activeWz.systems[0]
+          : activeWz.systems
+        const ftSystem = Array.isArray(activeWz.systems)
+          ? activeWz.systems.find(s => s && typeof s.ft === 'string')
+          : activeWz.systems
+        const ftFromSystems = ftSystem?.ft
+        const ftUrl = ftFromSystems || activeWz.renderedFt || activeWz.fluidTranscription || activeWz.ft
+
+        const rawRotation = firstSystem?.rotation
+        const rotation = rawRotation
+          ? {
+              angle: Number(rawRotation.angle) || 0,
+              pivot: {
+                x: Number(rawRotation?.pivot?.x),
+                y: Number(rawRotation?.pivot?.y)
+              },
+              invertDirection: INVERT_FT_ROTATION_DIRECTION
+            }
+          : null
+
+        if (ftUrl && mm) {
+          panelsEl.loadFtOverlay(1, ftUrl, mm, { rotation })
+        }
       }
 
       const atData = genDescData.at ?? {}
       if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks)
-      if (atData.renderedSvg) panelsEl.loadSvg(2, atData.renderedSvg)
+      if (atData.renderedSvg) {
+        const loadedStructured = typeof panelsEl.loadStructuredSvgAcrossPanels === 'function'
+          ? await panelsEl.loadStructuredSvgAcrossPanels(atData.renderedSvg)
+          : false
+        if (!loadedStructured) panelsEl.loadSvg(2, atData.renderedSvg)
+      }
     } catch (err) {
       this.renderError('Fehler beim Laden', err)
     }
