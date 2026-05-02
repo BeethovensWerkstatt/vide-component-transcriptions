@@ -322,6 +322,17 @@ describe('VideTranscrPanels coverage-focused tests', () => {
     expect(panels._panelStepValues[0]).toBe(6)
   })
 
+  it('commits fractional slider value when step snapping is disabled', () => {
+    const panels = createPanels({ render: true })
+    panels.setAttribute('step-snapping', 'off')
+
+    const slider = panels.querySelector('[data-step-slider="0"]')
+    slider.value = '5.7'
+    slider.dispatchEvent(new Event('change'))
+
+    expect(panels._panelStepValues[0]).toBeCloseTo(5.7, 12)
+  })
+
   it('covers disableAutoAnimation catch branch for throwing endElement', async () => {
     const panels = createPanels({ ready: true, viewers: [null, { addOverlay: vi.fn() }, null] })
 
@@ -446,6 +457,41 @@ describe('VideTranscrPanels coverage-focused tests', () => {
 
     panels._initHighlighting()
     expect(dtA.dataset.transcrHighlightBound).toBe('1')
+  })
+
+  it('binds bootstrap overlay animations to each panel step', () => {
+    const panels = createPanels()
+    const addOverlay = vi.fn()
+    panels.viewers = [{ addOverlay }, { addOverlay }, { addOverlay }]
+
+    const svgDoc = new DOMParser().parseFromString(
+      '<svg xmlns="http://www.w3.org/2000/svg"><g class="writingZone"><rect opacity="0"><animate attributeName="opacity" values="0;1"/></rect></g><g class="page-margin"><g><path><animateTransform attributeName="transform" type="translate" values="0 0;10 0"/></path></g></g></svg>',
+      'image/svg+xml'
+    )
+
+    const metadata = {
+      page: { mm: { width: 10, height: 10 } },
+      writingZoneGroup: svgDoc.querySelector('g.writingZone'),
+      pageMarginGroup: svgDoc.querySelector('g.page-margin'),
+      defsGroup: null
+    }
+
+    panels.loadOverlayLayers(metadata)
+
+    expect(panels._panelAnimations[0]).toBeTruthy()
+    expect(panels._panelAnimations[1]).toBeTruthy()
+    expect(panels._panelAnimations[2]).toBeTruthy()
+
+    expect(panels._shapesSvgEls[0].style.opacity).toBe('1')
+    expect(panels._ftOverlayEls[0].style.opacity).toBe('0')
+    expect(panels._ftOverlayEls[2].style.opacity).toBe('1')
+
+    const panel1Path = panels._dtSvgEls[1].querySelector('path')
+    const panel2Path = panels._dtSvgEls[2].querySelector('path')
+    const panel1Transform = panel1Path.getAttribute('transform').match(/translate\(([-\d.]+)\s+([-\d.]+)\)/)
+    expect(parseFloat(panel1Transform[1])).toBeCloseTo(4.285714285714286, 12)
+    expect(parseFloat(panel1Transform[2])).toBeCloseTo(0, 12)
+    expect(panel2Path.getAttribute('transform')).toBe('translate(10 0)')
   })
 
   it('covers loadShapesOverlay guards and error branches', async () => {

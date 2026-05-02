@@ -51,6 +51,8 @@ const STEP_LABELS = [
   'Editorische Eingriffe'
 ]
 
+const STEP_SNAPPING_ATTRIBUTE = 'step-snapping'
+
 const SINGLE_TRANSCRIPTION_SVG_URL = new URL('../sampleData/D-BNba_MH_60_Engelmann_p029_wz05_reel.svg', import.meta.url).href
 const STRUCTURED_SVG_TEXT_CACHE = (window.__BW_TranscriptionsSvgTextCache ??= new Map())
 
@@ -161,8 +163,10 @@ function prepareDataForTranscriptions (svgDom) {
 }
 
 class FluidAnimationController {
-  constructor (svgElement) {
-    this.svgElement = svgElement
+  constructor (svgElementOrElements) {
+    this.svgElements = Array.isArray(svgElementOrElements)
+      ? svgElementOrElements.filter(Boolean)
+      : [svgElementOrElements].filter(Boolean)
     this.animations = []
   }
 
@@ -173,29 +177,33 @@ class FluidAnimationController {
   }
 
   parseAnimations () {
-    const animateElements = this.svgElement.querySelectorAll('animate, animateTransform')
+    this.animations = []
 
-    animateElements.forEach((element) => {
-      const valuesAttr = element.getAttribute('values')
-      const attributeName = element.getAttribute('attributeName')
-      const targetElement = element.parentElement
+    this.svgElements.forEach((svgElement) => {
+      const animateElements = svgElement.querySelectorAll('animate, animateTransform')
 
-      if (!valuesAttr || !attributeName || !targetElement) return
+      animateElements.forEach((element) => {
+        const valuesAttr = element.getAttribute('values')
+        const attributeName = element.getAttribute('attributeName')
+        const targetElement = element.parentElement
 
-      const values = valuesAttr.split(';').map(v => v.trim())
-      const animationData = {
-        element,
-        targetElement,
-        attributeName,
-        values,
-        type: element.tagName.toLowerCase()
-      }
+        if (!valuesAttr || !attributeName || !targetElement) return
 
-      if (animationData.type === 'animatetransform') {
-        animationData.transformType = element.getAttribute('type') || 'translate'
-      }
+        const values = valuesAttr.split(';').map(v => v.trim())
+        const animationData = {
+          element,
+          targetElement,
+          attributeName,
+          values,
+          type: element.tagName.toLowerCase()
+        }
 
-      this.animations.push(animationData)
+        if (animationData.type === 'animatetransform') {
+          animationData.transformType = element.getAttribute('type') || 'translate'
+        }
+
+        this.animations.push(animationData)
+      })
     })
   }
 
@@ -493,69 +501,103 @@ export class VideTranscrPanels extends HTMLElement {
     const OSD = window.OpenSeadragon
 
     for (const [index, viewer] of this.viewers.entries()) {
-      // SVG Shapes
-      const shapes = metadata.writingZoneGroup.cloneNode(true)
-      console.log('shapes style: ', shapes.getAttribute('style'))
-      shapes.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
-      shapes.querySelector('animate').remove()
+      const animationRoots = []
 
-      const svgContainerShapes = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svgContainerShapes.setAttribute('width', '100%')
-      svgContainerShapes.setAttribute('height', '100%')
-      svgContainerShapes.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
-      svgContainerShapes.style.cssText = 'display:block'
-      svgContainerShapes.classList.add('shapes')
-      svgContainerShapes.appendChild(shapes)
-
-      // OSD manages this wrapper div: it sets its CSS position/size to match the
-      // world-space rect at every viewport change. The SVG inside scales with it.
-      const shapesWrapper = document.createElement('div')
-      shapesWrapper.id = 'shapesOverlay_' + index
-      shapesWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
-      shapesWrapper.appendChild(svgContainerShapes)
-
-      viewer.addOverlay({
-        element: shapesWrapper,
-        location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
-      })
-
-      // Transcriptions
-      const transcriptions = metadata.pageMarginGroup.cloneNode(true)
-      // transcriptions.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
-      transcriptions.querySelectorAll('animate, animateTransform').forEach(animation => {
-        animation.removeAttribute('repeatCount')
-        animation.setAttribute('begin', 'indefinite')
-        if (typeof animation.endElement === 'function') {
-          try {
-            animation.endElement()
-          } catch (_e) { }
+      if (metadata.writingZoneGroup) {
+        const shapes = metadata.writingZoneGroup.cloneNode(true)
+        shapes.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
+        const shapeAnimate = shapes.querySelector('animate')
+        if (shapeAnimate) {
+          shapeAnimate.removeAttribute('repeatCount')
+          shapeAnimate.setAttribute('begin', 'indefinite')
         }
-      })
 
-      transcriptions.removeAttribute('transform')
-      transcriptions.setAttribute('style', 'transform: scale(.62) translate(9000px, 11900px)')
+        const svgContainerShapes = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        svgContainerShapes.setAttribute('width', '100%')
+        svgContainerShapes.setAttribute('height', '100%')
+        svgContainerShapes.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
+        svgContainerShapes.style.cssText = 'display:block'
+        svgContainerShapes.classList.add('shapes')
+        svgContainerShapes.appendChild(shapes)
 
-      const svgContainerTranscriptions = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svgContainerTranscriptions.setAttribute('width', '100%')
-      svgContainerTranscriptions.setAttribute('height', '100%')
-      svgContainerTranscriptions.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
-      svgContainerTranscriptions.style.cssText = 'display:block'
-      svgContainerTranscriptions.classList.add('transcriptions')
-      if (metadata.defsGroup) {
-        svgContainerTranscriptions.appendChild(metadata.defsGroup.cloneNode(true)) // Ensure defs are included for transcription SVGs
+        // OSD manages this wrapper div: it sets its CSS position/size to match the
+        // world-space rect at every viewport change. The SVG inside scales with it.
+        const shapesWrapper = document.createElement('div')
+        shapesWrapper.id = 'shapesOverlay_' + index
+        shapesWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
+        shapesWrapper.appendChild(svgContainerShapes)
+
+        viewer.addOverlay({
+          element: shapesWrapper,
+          location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
+        })
+
+        this._shapesSvgEls[index] = svgContainerShapes
+        if (index === 0) this._shapesSvgEl = svgContainerShapes
+        animationRoots.push(svgContainerShapes)
+      } else {
+        this._shapesSvgEls[index] = null
       }
-      svgContainerTranscriptions.appendChild(transcriptions)
 
-      const transcriptionsWrapper = document.createElement('div')
-      transcriptionsWrapper.id = 'transcriptionsOverlay_' + index
-      transcriptionsWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
-      transcriptionsWrapper.appendChild(svgContainerTranscriptions)
+      if (metadata.pageMarginGroup) {
+        // Transcriptions
+        const transcriptions = metadata.pageMarginGroup.cloneNode(true)
+        // transcriptions.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
+        transcriptions.querySelectorAll('animate, animateTransform').forEach(animation => {
+          animation.removeAttribute('repeatCount')
+          animation.setAttribute('begin', 'indefinite')
+          if (typeof animation.endElement === 'function') {
+            try {
+              animation.endElement()
+            } catch (_e) { }
+          }
+        })
 
-      viewer.addOverlay({
-        element: transcriptionsWrapper,
-        location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
-      })
+        transcriptions.removeAttribute('transform')
+        transcriptions.setAttribute('style', 'transform: scale(.74) translate(6470px, 9320px)')
+
+        const svgContainerTranscriptions = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        svgContainerTranscriptions.setAttribute('width', '100%')
+        svgContainerTranscriptions.setAttribute('height', '100%')
+        svgContainerTranscriptions.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
+        svgContainerTranscriptions.style.cssText = 'display:block'
+        svgContainerTranscriptions.classList.add('transcriptions')
+        if (metadata.defsGroup) {
+          svgContainerTranscriptions.appendChild(metadata.defsGroup.cloneNode(true)) // Ensure defs are included for transcription SVGs
+        }
+        svgContainerTranscriptions.appendChild(transcriptions)
+
+        const transcriptionsWrapper = document.createElement('div')
+        transcriptionsWrapper.id = 'transcriptionsOverlay_' + index
+        transcriptionsWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
+        transcriptionsWrapper.appendChild(svgContainerTranscriptions)
+
+        viewer.addOverlay({
+          element: transcriptionsWrapper,
+          location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
+        })
+
+        this._ftOverlayEls[index] = transcriptionsWrapper
+        this._dtSvgEls[index] = svgContainerTranscriptions
+        if (index === 1) this._dtSvgEl = svgContainerTranscriptions
+        animationRoots.push(svgContainerTranscriptions)
+      } else {
+        this._ftOverlayEls[index] = null
+        this._dtSvgEls[index] = null
+      }
+
+      if (animationRoots.length) {
+        const controller = new FluidAnimationController(animationRoots)
+        controller.init()
+        this._panelAnimations[index] = controller
+      } else {
+        this._panelAnimations[index] = null
+      }
+
+      this._applyStepValue(index, this._panelStepValues[index], { commit: false, syncUi: true })
     }
+
+    this._tryInitHighlighting()
   }
 
   render () {
@@ -610,7 +652,7 @@ export class VideTranscrPanels extends HTMLElement {
       const finishPointerDrag = () => {
         if (!this._sliderPointerDown[i]) return
         this._sliderPointerDown[i] = false
-        this._setPanelStep(i, this._snapStep(parseFloat(slider.value)))
+        this._setPanelStep(i, parseFloat(slider.value))
       }
 
       slider.addEventListener('pointerup', finishPointerDrag)
@@ -623,7 +665,7 @@ export class VideTranscrPanels extends HTMLElement {
 
       slider.addEventListener('change', () => {
         if (this._sliderPointerDown[i]) return
-        this._setPanelStep(i, this._snapStep(parseFloat(slider.value)))
+        this._setPanelStep(i, parseFloat(slider.value))
       })
 
       prevBtn.addEventListener('click', () => this._stepByButton(i, -1))
@@ -636,8 +678,21 @@ export class VideTranscrPanels extends HTMLElement {
     return Math.max(1, Math.min(8, rounded))
   }
 
+  _isStepSnappingEnabled () {
+    const rawValue = this.getAttribute(STEP_SNAPPING_ATTRIBUTE)
+    if (rawValue == null) return true
+
+    const mode = rawValue.trim().toLowerCase()
+    return mode !== 'off' && mode !== 'false' && mode !== '0' && mode !== 'none'
+  }
+
+  _normalizeCommittedStep (value) {
+    const clamped = Math.max(1, Math.min(8, value))
+    return this._isStepSnappingEnabled() ? this._snapStep(clamped) : clamped
+  }
+
   _stepByButton (panelIndex, delta) {
-    const current = this._panelStepValues[panelIndex]
+    const current = this._snapStep(this._panelStepValues[panelIndex])
     const target = Math.max(1, Math.min(8, current + delta))
     if (target === current) return
     this._animatePanelStep(panelIndex, target)
@@ -676,29 +731,32 @@ export class VideTranscrPanels extends HTMLElement {
   }
 
   _setPanelStep (panelIndex, step) {
-    const clamped = Math.max(1, Math.min(8, step))
-    this._panelStepValues[panelIndex] = clamped
-    this._applyStepValue(panelIndex, clamped, { commit: true, syncUi: true })
+    const committed = this._normalizeCommittedStep(step)
+    this._panelStepValues[panelIndex] = committed
+    this._applyStepValue(panelIndex, committed, { commit: true, syncUi: true })
   }
 
   _updateStepUi (panelIndex, value, snappedStep) {
     const slider = this.querySelector(`[data-step-slider="${panelIndex}"]`)
     if (slider) slider.value = String(value)
 
+    const committedStep = this._panelStepValues[panelIndex]
+    const committedStage = this._snapStep(committedStep)
+    const activeStep = Number.isInteger(snappedStep) ? snappedStep : committedStage
+
     const title = this.querySelector(`[data-step-title="${panelIndex}"]`)
-    if (title) title.textContent = STEP_LABELS[(snappedStep || this._snapStep(value)) - 1]
+    if (title) title.textContent = STEP_LABELS[activeStep - 1]
 
     const prevBtn = this.querySelector(`[data-step-prev="${panelIndex}"]`)
     const nextBtn = this.querySelector(`[data-step-next="${panelIndex}"]`)
-    const activeStep = snappedStep || this._snapStep(value)
     if (prevBtn) prevBtn.disabled = activeStep <= 1
     if (nextBtn) nextBtn.disabled = activeStep >= 8
   }
 
   _applyStepValue (panelIndex, rawStep, { commit = false, syncUi = true } = {}) {
     const step = Math.max(1, Math.min(8, rawStep))
-    const snapped = this._snapStep(step)
-    if (commit) this._panelStepValues[panelIndex] = snapped
+    const committed = this._normalizeCommittedStep(step)
+    if (commit) this._panelStepValues[panelIndex] = committed
 
     // Facsimile: full visible at steps 1-2, 50% at 3, then fade to 0 by 4.
     let imageOpacity = 0
@@ -720,21 +778,17 @@ export class VideTranscrPanels extends HTMLElement {
       shapesOpacity = 3 - step
     }
 
-    // FT appears from 2->3 and then runs in six step anchors
-    // (3..8 => 0%, 20%, 40%, 60%, 80%, 100%), interpolated while dragging.
+    // FT appears from 2->3.
     let ftOpacity = 0
-    let ftProgress = 0
     if (step > 2 && step < 3) {
       ftOpacity = step - 2
     } else if (step >= 3) {
       ftOpacity = 1
-      const anchors = [0, 0.2, 0.4, 0.6, 0.8, 1]
-      const anchoredStep = Math.max(0, Math.min(5, step - 3))
-      const lower = Math.floor(anchoredStep)
-      const upper = Math.min(5, Math.ceil(anchoredStep))
-      const localT = anchoredStep - lower
-      ftProgress = anchors[lower] + (anchors[upper] - anchors[lower]) * localT
     }
+
+    // Shift animation by one stage so panel phase labels and transcription
+    // keyframes line up (e.g. stage 3 already shows the first transcription step).
+    const animationProgress = step / 7
 
     const imageItem = this._baseImageItems[panelIndex]
     if (imageItem) imageItem.setOpacity(Math.max(0, Math.min(1, imageOpacity)))
@@ -752,14 +806,23 @@ export class VideTranscrPanels extends HTMLElement {
     }
 
     const controller = this._panelAnimations[panelIndex]
-    if (controller) controller.setProgress(Math.max(0, Math.min(1, ftProgress)))
+    if (controller) controller.setProgress(Math.max(0, Math.min(1, animationProgress)))
 
-    if (syncUi) this._updateStepUi(panelIndex, step, commit ? snapped : null)
+    if (syncUi) this._updateStepUi(panelIndex, step, commit ? this._snapStep(committed) : null)
   }
 
-  configurePanels ({ defaultSteps = [2, 3, 8] } = {}) {
+  /**
+   * @param {{ defaultSteps?: number[], snapOnCommit?: boolean }} [options]
+   * defaultSteps: initial stage values per panel.
+   * snapOnCommit: enable/disable commit snapping (true = integer stages).
+   */
+  configurePanels ({ defaultSteps = [2, 3, 8], snapOnCommit } = {}) {
+    if (typeof snapOnCommit === 'boolean') {
+      this.setAttribute(STEP_SNAPPING_ATTRIBUTE, snapOnCommit ? 'on' : 'off')
+    }
+
     defaultSteps.forEach((step, i) => {
-      if (typeof step === 'number') this._panelStepValues[i] = this._snapStep(step)
+      if (typeof step === 'number') this._panelStepValues[i] = this._normalizeCommittedStep(step)
       this._updateStepUi(i, this._panelStepValues[i], this._panelStepValues[i])
       this._applyStepValue(i, this._panelStepValues[i], { commit: true, syncUi: true })
     })
@@ -1389,19 +1452,27 @@ export class VideTranscrPanels extends HTMLElement {
       this._resetPanelContent(i)
       await this.loadPageImage(i, page, { opacity: 1 })
 
+      const animationRoots = []
+
       const writingOverlay = this._addStructuredGroupOverlay(i, page, pre.writingZoneGroup, 'pageShapes')
       if (writingOverlay?.svgEl) {
         this._shapesSvgEls[i] = writingOverlay.svgEl
         if (i === 0) this._shapesSvgEl = writingOverlay.svgEl
-        const controller = new FluidAnimationController(writingOverlay.svgEl)
-        controller.init()
-        this._panelAnimations[i] = controller
+        animationRoots.push(writingOverlay.svgEl)
       }
 
       const marginOverlay = this._addStructuredGroupOverlay(i, page, pre.pageMarginGroup, 'renderedWz')
       if (marginOverlay?.wrapperEl) {
         this._ftOverlayEls[i] = marginOverlay.wrapperEl
         this._dtSvgEls[i] = marginOverlay.svgEl
+        if (i === 1) this._dtSvgEl = marginOverlay.svgEl
+        animationRoots.push(marginOverlay.svgEl)
+      }
+
+      if (animationRoots.length) {
+        const controller = new FluidAnimationController(animationRoots)
+        controller.init()
+        this._panelAnimations[i] = controller
       }
     }
 

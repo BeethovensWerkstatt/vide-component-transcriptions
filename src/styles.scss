@@ -437,6 +437,15 @@ svg.atTranscription {
   }
 }
 
+.transcr-step-slider {
+  width: 400px;
+}
+
+.transcr-step-btn {
+  position: relative;
+  top: -8px;
+}
+
 svg.transcriptions {
   stroke: #000000;
   .bounding-box rect {

@@ -189,7 +189,7 @@ export class VideTranscrRouter {
       // Mount the three-panel OSD viewer
       this.contentEl.setContent(`
         <div class="transcr-wz-view">
-          <vide-transcr-panels></vide-transcr-panels>
+          <vide-transcr-panels step-snapping="off"></vide-transcr-panels>
           <div class="side-panel" id="side-panel">
             <div class="side-panel-tabs">
               <button class="side-panel-tab active" data-panel="info">
