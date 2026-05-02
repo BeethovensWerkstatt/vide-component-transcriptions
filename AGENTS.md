@@ -19,7 +19,7 @@ Core structure:
 - src/data-cache.js: shared fetch promise cache.
 
 Design characteristics:
-- SPA island model under /transcr routes.
+- SPA island model under /transcription routes.
 - Dynamic script loading for OpenSeadragon global availability.
 - Multi-panel rendering with panel synchronization and overlay logic.
 

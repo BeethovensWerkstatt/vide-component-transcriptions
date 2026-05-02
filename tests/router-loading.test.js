@@ -26,7 +26,7 @@ function createContentEl () {
 
 function makeRouter () {
   const router = Object.create(VideTranscrRouter.prototype)
-  router.basePath = '/transcr'
+  router.basePath = '/transcription'
   router.contentEl = createContentEl()
   return router
 }

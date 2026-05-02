@@ -436,3 +436,37 @@ svg.atTranscription {
     }
   }
 }
+
+svg.transcriptions {
+  stroke: #000000;
+  .bounding-box rect {
+    fill: transparent;
+    stroke: transparent;
+    display: none;
+  }
+
+  g.page-margin {
+    font-family: Times, serif;
+  }
+  
+  g.ending, g.fing, g.reh, g.tempo {
+    font-weight: bold;
+  }
+
+  g.dir, g.dynam, g.mNum {
+    font-style: italic;
+  }
+  
+  g.label {
+    font-weight: normal;
+  }
+
+  path {
+    stroke: currentColor;
+  }
+  
+  .measure path {
+    stroke: currentColor
+  }
+
+}

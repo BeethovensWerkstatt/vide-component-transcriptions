@@ -3,7 +3,7 @@ import { VideTranscrRouter } from '../src/vide-transcr-router.js'
 
 function makeRouter () {
   const router = Object.create(VideTranscrRouter.prototype)
-  router.basePath = '/transcr'
+  router.basePath = '/transcription'
   router.contentEl = document.createElement('div')
   router.app = document.createElement('div')
   return router
@@ -12,7 +12,7 @@ function makeRouter () {
 describe('VideTranscrRouter', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
-    window.history.replaceState({}, '', '/transcr/')
+    window.history.replaceState({}, '', '/transcription/')
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => []
@@ -104,7 +104,7 @@ describe('VideTranscrRouter', () => {
   describe('init and path handling', () => {
     it('getCurrentPath strips base path', () => {
       const router = makeRouter()
-      window.history.replaceState({}, '', '/transcr/NK/wz1.1/')
+      window.history.replaceState({}, '', '/transcription/NK/wz1.1/')
 
       expect(router.getCurrentPath()).toBe('/NK/wz1.1/')
     })
@@ -122,10 +122,10 @@ describe('VideTranscrRouter', () => {
       router.route = vi.fn()
       const replaceSpy = vi.spyOn(window.history, 'replaceState')
 
-      window.history.replaceState({}, '', '/transcr/?_path=%2FNK%2F')
+      window.history.replaceState({}, '', '/transcription/?_path=%2FNK%2F')
       router.init()
 
-      expect(replaceSpy).toHaveBeenCalledWith({ path: '/NK/' }, '', '/transcr/NK/')
+      expect(replaceSpy).toHaveBeenCalledWith({ path: '/NK/' }, '', '/transcription/NK/')
       expect(router.route).toHaveBeenCalledWith('/NK/')
     })
 
@@ -135,7 +135,7 @@ describe('VideTranscrRouter', () => {
       router.route = vi.fn()
       router.getCurrentPath = vi.fn(() => '/NK/')
 
-      window.history.replaceState({}, '', '/transcr/NK/')
+      window.history.replaceState({}, '', '/transcription/NK/')
       router.init()
 
       expect(router.route).toHaveBeenCalledWith('/NK/')
@@ -149,7 +149,7 @@ describe('VideTranscrRouter', () => {
       router.getCurrentPath = vi.fn(() => '/NK/')
       const pushSpy = vi.spyOn(window.history, 'pushState')
 
-      window.history.replaceState({}, '', '/transcr/NK/')
+      window.history.replaceState({}, '', '/transcription/NK/')
       router.init()
 
       window.dispatchEvent(new PopStateEvent('popstate'))
@@ -157,11 +157,11 @@ describe('VideTranscrRouter', () => {
 
       const link = document.createElement('a')
       link.setAttribute('data-spa-link', '')
-      link.setAttribute('href', '/transcr/NK/wz1.1/')
+      link.setAttribute('href', '/transcription/NK/wz1.1/')
       router.app.appendChild(link)
       link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
-      expect(pushSpy).toHaveBeenCalledWith({ path: '/NK/wz1.1/' }, '', '/transcr/NK/wz1.1/')
+      expect(pushSpy).toHaveBeenCalledWith({ path: '/NK/wz1.1/' }, '', '/transcription/NK/wz1.1/')
       expect(routeSpy).toHaveBeenCalledWith('/NK/wz1.1/')
     })
   })
@@ -393,7 +393,7 @@ describe('VideTranscrRouter', () => {
       expect(panel.innerHTML).toContain('wz-nav-list')
       expect(panel.querySelectorAll('.wz-nav-item').length).toBe(2)
       expect(panel.querySelectorAll('.wz-nav-item.active').length).toBe(1)
-      expect(panel.innerHTML).toContain('/transcr/NK/wz1.1/')
+      expect(panel.innerHTML).toContain('/transcription/NK/wz1.1/')
     })
   })
 
@@ -405,7 +405,7 @@ describe('VideTranscrRouter', () => {
 
       router.navigateTo('NK')
 
-      expect(pushStateSpy).toHaveBeenCalledWith({ path: '/NK' }, '', '/transcr/NK')
+      expect(pushStateSpy).toHaveBeenCalledWith({ path: '/NK' }, '', '/transcription/NK')
       expect(router.route).toHaveBeenCalledWith('/NK')
     })
 
@@ -416,7 +416,7 @@ describe('VideTranscrRouter', () => {
 
       router.navigateToWz('NK', 3, 2)
 
-      expect(pushStateSpy).toHaveBeenCalledWith({ path: '/NK/wz3.2' }, '', '/transcr/NK/wz3.2')
+      expect(pushStateSpy).toHaveBeenCalledWith({ path: '/NK/wz3.2' }, '', '/transcription/NK/wz3.2')
       expect(router.route).toHaveBeenCalledWith('/NK/wz3.2')
     })
   })

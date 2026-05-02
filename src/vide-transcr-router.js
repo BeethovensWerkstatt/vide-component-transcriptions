@@ -17,7 +17,7 @@ const INVERT_FT_ROTATION_DIRECTION = false
  */
 export class VideTranscrRouter {
   constructor (appElement) {
-    this.basePath = '/transcr'
+    this.basePath = '/transcription'
     this.app = appElement
     this.contentEl = appElement.querySelector('vide-transcr-content')
 
@@ -75,9 +75,9 @@ export class VideTranscrRouter {
    * Route to the given path and render the appropriate view.
    *
    * URL patterns:
-   *   /transcr/              → home
-   *   /transcr/NK/           → document overview
-   *   /transcr/NK/wz1.1/    → writing zone view (page 1, zone 1, both 1-based)
+  *   /transcription/              → home
+  *   /transcription/NK/           → document overview
+  *   /transcription/NK/wz1.1/    → writing zone view (page 1, zone 1, both 1-based)
    */
   route (path) {
     const segments = path.split('/').filter(Boolean)
@@ -233,13 +233,25 @@ export class VideTranscrRouter {
       const headerTitle = this.contentEl.querySelector('.transcription-header-title')
       if (headerTitle) headerTitle.textContent = `${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`
 
-      // Panel 0: facsimile zoomed to the writing-zone rect, full opacity
-      // Panel 1: same facsimile, 50% opacity (overlay comparison use case)
-      // Panel 2: annotated transcription SVG as live DOM nodes
+      const atData = genDescData.at ?? {}
+      if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks)
+
+      if (typeof panelsEl.bootstrapFromCachedSampleSvg === 'function') {
+        await panelsEl.bootstrapFromCachedSampleSvg()
+        return
+      }
+
+      let loadedStructured = false
+      if (atData.renderedSvg) {
+        loadedStructured = typeof panelsEl.loadStructuredSvgAcrossPanels === 'function'
+          ? await panelsEl.loadStructuredSvgAcrossPanels(atData.renderedSvg)
+          : false
+      }
+
+      // Legacy fallback flow when no structured SVG layout is available.
       const writingZones = genDescData.writingZones ?? []
-      // Use the occurrence index so the correct zone is shown, not always [0]
       const activeWz = writingZones[activeOccIdx] ?? writingZones[0]
-      if (activeWz) {
+      if (activeWz && !loadedStructured) {
         if (activeWz.shapeLinks) panelsEl.setShapeLinks(activeWz.shapeLinks)
         const rect = activeWz.rect ?? null
         panelsEl.loadPageImage(0, activeWz.page, { rect })
@@ -251,7 +263,6 @@ export class VideTranscrRouter {
           panelsEl.loadRenderedWzOverlay(1, activeWz.renderedWz, mm)
         }
 
-        // FT must come from API-provided fields, preferably systems[].ft.
         const firstSystem = Array.isArray(activeWz.systems)
           ? activeWz.systems[0]
           : activeWz.systems
@@ -278,14 +289,7 @@ export class VideTranscrRouter {
         }
       }
 
-      const atData = genDescData.at ?? {}
-      if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks)
-      if (atData.renderedSvg) {
-        const loadedStructured = typeof panelsEl.loadStructuredSvgAcrossPanels === 'function'
-          ? await panelsEl.loadStructuredSvgAcrossPanels(atData.renderedSvg)
-          : false
-        if (!loadedStructured) panelsEl.loadSvg(2, atData.renderedSvg)
-      }
+      if (atData.renderedSvg && !loadedStructured) panelsEl.loadSvg(2, atData.renderedSvg)
     } catch (err) {
       this.renderError('Fehler beim Laden', err)
     }
