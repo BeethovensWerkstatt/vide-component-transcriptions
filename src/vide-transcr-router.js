@@ -236,23 +236,24 @@ export class VideTranscrRouter {
       const atData = genDescData.at ?? {}
       if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks)
 
-      if (typeof panelsEl.bootstrapFromCachedSampleSvg === 'function') {
-        await panelsEl.bootstrapFromCachedSampleSvg()
-        return
-      }
+      const writingZones = genDescData.writingZones ?? []
+      const activeWz = writingZones[activeOccIdx] ?? writingZones[0]
+      if (activeWz?.shapeLinks) panelsEl.setShapeLinks(activeWz.shapeLinks)
 
       let loadedStructured = false
-      if (atData.renderedSvg) {
+      const ftSvgUrl = genDescData.ft?.uri
+      if (ftSvgUrl && typeof panelsEl.bootstrapFromFtUri === 'function') {
+        loadedStructured = await panelsEl.bootstrapFromFtUri(ftSvgUrl)
+      }
+
+      if (!loadedStructured && atData.renderedSvg) {
         loadedStructured = typeof panelsEl.loadStructuredSvgAcrossPanels === 'function'
           ? await panelsEl.loadStructuredSvgAcrossPanels(atData.renderedSvg)
           : false
       }
 
       // Legacy fallback flow when no structured SVG layout is available.
-      const writingZones = genDescData.writingZones ?? []
-      const activeWz = writingZones[activeOccIdx] ?? writingZones[0]
       if (activeWz && !loadedStructured) {
-        if (activeWz.shapeLinks) panelsEl.setShapeLinks(activeWz.shapeLinks)
         const rect = activeWz.rect ?? null
         panelsEl.loadPageImage(0, activeWz.page, { rect })
         panelsEl.loadShapesOverlay(0, activeWz.page)

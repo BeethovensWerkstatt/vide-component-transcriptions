@@ -56,6 +56,126 @@ const STEP_SNAPPING_ATTRIBUTE = 'step-snapping'
 const SINGLE_TRANSCRIPTION_SVG_URL = new URL('../sampleData/D-BNba_MH_60_Engelmann_p029_wz05_reel.svg', import.meta.url).href
 const STRUCTURED_SVG_TEXT_CACHE = (window.__BW_TranscriptionsSvgTextCache ??= new Map())
 
+function getImageHref (imageEl) {
+  if (!imageEl) return ''
+  return imageEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imageEl.getAttribute('href') || ''
+}
+
+function getUseHref (useEl) {
+  if (!useEl) return ''
+  return useEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || useEl.getAttribute('href') || ''
+}
+
+function getNumericAttr (el, attrName, fallback = 0) {
+  if (!el) return fallback
+  const raw = el.getAttribute(attrName)
+  const value = parseFloat(raw)
+  return Number.isFinite(value) ? value : fallback
+}
+
+function parseNumberList (value) {
+  return String(value || '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(n => parseFloat(n))
+    .filter(n => Number.isFinite(n))
+}
+
+function parseViewBox (svgEl) {
+  const rawViewBox = svgEl?.getAttribute('viewBox')
+  const parts = parseNumberList(rawViewBox)
+  if (parts.length === 4) {
+    return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] }
+  }
+
+  const width = parseFloat(svgEl?.getAttribute('width')) || 0
+  const height = parseFloat(svgEl?.getAttribute('height')) || 0
+  return { x: 0, y: 0, width, height }
+}
+
+function extractInlineTransform (el) {
+  const style = el?.getAttribute('style') || ''
+  const match = style.match(/(?:^|;)\s*transform\s*:\s*([^;]+)/i)
+  return match ? match[1].trim() : ''
+}
+
+function wrapGroupWithAncestorTransforms (groupEl, stopAtEl) {
+  if (!groupEl) return null
+
+  const svgNs = 'http://www.w3.org/2000/svg'
+  let wrapped = groupEl.cloneNode(true)
+  let current = groupEl.parentElement
+
+  while (current && current !== stopAtEl) {
+    const tagName = current.tagName?.toLowerCase()
+    const transforms = []
+
+    if (tagName === 'svg') {
+      const x = getNumericAttr(current, 'x', 0)
+      const y = getNumericAttr(current, 'y', 0)
+      if (x !== 0 || y !== 0) transforms.push(`translate(${x} ${y})`)
+    }
+
+    const attrTransform = current.getAttribute('transform') || ''
+    if (attrTransform) transforms.push(attrTransform)
+
+    const inlineTransform = extractInlineTransform(current)
+    if (inlineTransform) transforms.push(inlineTransform)
+
+    if (transforms.length) {
+      const wrapper = document.createElementNS(svgNs, 'g')
+      wrapper.setAttribute('transform', transforms.join(' '))
+      wrapper.appendChild(wrapped)
+      wrapped = wrapper
+    }
+
+    current = current.parentElement
+  }
+
+  return wrapped
+}
+
+function cloneShapesSvgForOverlay (shapesSvg) {
+  if (!shapesSvg) return null
+
+  const clone = shapesSvg.cloneNode(true)
+  clone.removeAttribute('x')
+  clone.removeAttribute('y')
+  return clone
+}
+
+function collectDefsGroup (svgDom) {
+  const defsEls = Array.from(svgDom.querySelectorAll('defs'))
+  if (!defsEls.length) return null
+
+  const mergedDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+
+  defsEls.forEach((defsEl) => {
+    Array.from(defsEl.childNodes).forEach((childNode) => {
+      mergedDefs.appendChild(childNode.cloneNode(true))
+    })
+  })
+
+  return mergedDefs.childNodes.length ? mergedDefs : null
+}
+
+function extractRotationDeg (value) {
+  const match = String(value || '').match(/rotate\(([-\d.]+)(?:deg)?(?:[\s,]+[-\d.]+[\s,]+[-\d.]+)?\)/i)
+  return match ? (parseFloat(match[1]) || 0) : 0
+}
+
+function toIiifBaseUrl (href) {
+  const raw = String(href || '')
+  return raw
+    .replace(/\/full\/(full|max)\/0\/default\.(jpg|jpeg|png)$/i, '')
+    .replace(/\/full\/(full|max)\/0\/default\.(jpg|jpeg|png)(\?.*)$/i, '')
+}
+
+function toIiifInfoJsonUrl (imageOrBaseUrl) {
+  const base = toIiifBaseUrl(imageOrBaseUrl)
+  return base.endsWith('/info.json') ? base : `${base}/info.json`
+}
+
 /**
  * @param {string} svgText
  * @returns {Document}
@@ -94,42 +214,55 @@ function loadSvgTextCached (svgUrl) {
  * }}
  */
 function computeMetadata (svgDom) {
-  const imageEl = svgDom.querySelector('image#facsimile')
-  const rawHref = imageEl
-    ? (imageEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || imageEl.getAttribute('href') || '')
-    : ''
+  const svgRoot = svgDom.documentElement
+  const sceneSvg = svgDom.querySelector('svg.definition-scale') || svgRoot
+  const scene = parseViewBox(sceneSvg)
 
-  const iiifBaseUrl = rawHref.replace(/\/full\/full\/0\/default\.jpg$/i, '')
-  const width = imageEl ? (parseFloat(imageEl.getAttribute('width')) || 0) : 0
-  const height = imageEl ? (parseFloat(imageEl.getAttribute('height')) || 0) : 0
+  const facsimileImageEl = svgDom.querySelector('image.facsimileImage')
   const bgUse = svgDom.querySelector('use#Hintergrund')
-  const styleTransform = bgUse ? (bgUse.getAttribute('style') || '') : ''
-  const rotationMatch = styleTransform.match(/rotate\(([-\d.]+)deg\)/)
-  const rotationDeg = rotationMatch ? (parseFloat(rotationMatch[1]) * -1 || 0) : 0
+  const defsImageEl = svgDom.querySelector('image#facsimile')
 
-  /*
-  function parseImageUrl(imageUrl) {
-    const hashIdx = imageUrl.indexOf('#')
-    const target = hashIdx >= 0 ? imageUrl.slice(0, hashIdx) : imageUrl
-    const fragment = hashIdx >= 0 ? imageUrl.slice(hashIdx + 1) : ''
-    const sp = new URLSearchParams(fragment)
-    const [x, y, w, h] = (sp.get('xywh') || '0,0,0,0').split(',').map(Number)
-    const rotation = parseFloat(sp.get('rotate') || '0')
-    return { target, xywh: { x, y, w, h }, rotation } */
+  const useHref = getUseHref(bgUse)
+  const referencedImageEl = useHref.startsWith('#')
+    ? svgDom.getElementById(useHref.slice(1))
+    : null
 
-  const pageDimensions = svgDom.querySelector('svg.definition-scale').getAttribute('viewBox').split(' ').map(num => Number.isNaN(num) ? 0 : num / 90) // viewBox units are in 1/90mm, convert to mm
+  const facsimileEl = facsimileImageEl || bgUse || defsImageEl
+  const sourceImageEl = facsimileImageEl || referencedImageEl || defsImageEl
 
+  const rawHref = getImageHref(sourceImageEl) || (useHref && !useHref.startsWith('#') ? useHref : '')
+  const iiifBaseUrl = toIiifBaseUrl(rawHref)
+
+  const width = getNumericAttr(facsimileEl, 'width', getNumericAttr(sourceImageEl, 'width', 0))
+  const height = getNumericAttr(facsimileEl, 'height', getNumericAttr(sourceImageEl, 'height', 0))
+  const x = getNumericAttr(facsimileEl, 'x', 0)
+  const y = getNumericAttr(facsimileEl, 'y', 0)
+
+  const imageTransform = facsimileEl ? `${facsimileEl.getAttribute('transform') || ''} ${facsimileEl.getAttribute('style') || ''}` : ''
+  const backgroundTransform = bgUse ? `${bgUse.getAttribute('transform') || ''} ${bgUse.getAttribute('style') || ''}` : ''
+  const rawRotationDeg = extractRotationDeg(imageTransform) || extractRotationDeg(backgroundTransform)
+  // Keep existing sign convention: calculatePagePosition applies one inversion.
+  const rotationDeg = rawRotationDeg * -1
+
+  const shapesSvg = svgDom.querySelector('g.shapes > svg')
   const writingZone = svgDom.querySelector('g.writingZone')
   const pageMargin = svgDom.querySelector('g.page-margin')
-  const defs = svgDom.querySelector('defs')
+  const writingZoneGroup = shapesSvg
+    ? cloneShapesSvgForOverlay(shapesSvg)
+    : (writingZone ? writingZone.cloneNode(true) : null)
+  const pageMarginGroup = pageMargin
+    ? wrapGroupWithAncestorTransforms(pageMargin, sceneSvg)
+    : null
+  const defs = collectDefsGroup(svgDom)
 
   return {
     iiifBaseUrl,
-    image: width > 0 && height > 0 ? { width, height, rotationDeg } : null,
-    page: { width: pageDimensions[2], height: pageDimensions[3] },
-    writingZoneGroup: writingZone ? writingZone.cloneNode(true) : null,
-    pageMarginGroup: pageMargin ? pageMargin.cloneNode(true) : null,
-    defsGroup: defs ? defs.cloneNode(true) : null
+    image: width > 0 && height > 0 ? { x, y, width, height, rotationDeg } : null,
+    scene,
+    overlayFrame: null,
+    writingZoneGroup,
+    pageMarginGroup,
+    defsGroup: defs
   }
 }
 
@@ -150,14 +283,20 @@ function prepareDataForTranscriptions (svgDom) {
     throw new Error('Structured SVG does not include facsimile metadata')
   }
 
-  const { width, height, rotationDeg } = metadata.image
+  const { x, y, width, height, rotationDeg } = metadata.image
+  const placement = { x, y, width, height }
   return {
     ...metadata,
     page: {
       image: metadata.iiifBaseUrl,
-      rotate: rotationDeg, // TODO: offsets
+      rotate: rotationDeg,
       px: { width, height },
-      mm: { width: metadata.page.width, height: metadata.page.height }
+      mm: {
+        width: metadata.scene?.width || width,
+        height: metadata.scene?.height || height
+      },
+      placement,
+      scene: metadata.scene
     }
   }
 }
@@ -407,13 +546,16 @@ export class VideTranscrPanels extends HTMLElement {
     this._dtSvgEl = null // legacy alias (panel 1)
     this._atSvgEl = null // live <svg> from loadSvg
     this._bootstrapPromise = null
+    this._bootstrapSourceUrl = null
     this._viewerSyncBound = false
   }
 
   connectedCallback () {
     requestAnimationFrame(() => {
-      this.bootstrapFromCachedSampleSvg().catch(err => {
-        console.error('[VideTranscrPanels] bootstrap failed', err)
+      this._ensureMountedViewersReady().then(() => {
+        this._ensureViewerSync()
+      }).catch(err => {
+        console.error('[VideTranscrPanels] init failed', err)
       })
     })
   }
@@ -437,7 +579,14 @@ export class VideTranscrPanels extends HTMLElement {
     this._dtSvgEl = null
     this._atSvgEl = null
     this._bootstrapPromise = null
+    this._bootstrapSourceUrl = null
     this._viewerSyncBound = false
+  }
+
+  async _ensureMountedViewersReady () {
+    if (!this.querySelector('#transcr-panel-0')) this.render()
+    if (!this.viewers.length) this._initViewers()
+    await this._ready
   }
 
   /**
@@ -448,19 +597,31 @@ export class VideTranscrPanels extends HTMLElement {
    * @returns {Promise<void>}
    */
   bootstrapFromCachedSampleSvg () {
-    if (!this._bootstrapPromise) {
-      this._bootstrapPromise = this._runSingleSvgBootstrap()
+    return this.bootstrapFromFtUri(SINGLE_TRANSCRIPTION_SVG_URL)
+  }
+
+  /**
+   * Bootstrap transcription panels from a structured FT SVG URI.
+   * @param {string} svgUrl
+   * @returns {Promise<boolean>}
+   */
+  bootstrapFromFtUri (svgUrl) {
+    if (!svgUrl) return Promise.resolve(false)
+
+    if (this._bootstrapPromise && this._bootstrapSourceUrl === svgUrl) {
+      return this._bootstrapPromise
     }
+
+    this._bootstrapSourceUrl = svgUrl
+    this._bootstrapPromise = this._runSingleSvgBootstrap(svgUrl)
     return this._bootstrapPromise
   }
 
-  async _runSingleSvgBootstrap () {
-    this.render()
-    this._initViewers()
-    await this._ready
+  async _runSingleSvgBootstrap (svgUrl) {
+    await this._ensureMountedViewersReady()
     this._ensureViewerSync()
 
-    const svgText = await loadSvgTextCached(SINGLE_TRANSCRIPTION_SVG_URL)
+    const svgText = await loadSvgTextCached(svgUrl)
     const svgDom = parseSvgDocument(svgText)
     const metadata = prepareDataForTranscriptions(svgDom)
 
@@ -470,8 +631,8 @@ export class VideTranscrPanels extends HTMLElement {
       await this.initiateOSD(viewerIndex, metadata)
     }
 
-    // Intentionally left as a no-op placeholder for upcoming overlay work.
     this.loadOverlayLayers(metadata)
+    return true
   }
 
   _ensureViewerSync () {
@@ -499,88 +660,64 @@ export class VideTranscrPanels extends HTMLElement {
    */
   loadOverlayLayers (metadata) {
     const OSD = window.OpenSeadragon
+    const scene = metadata.page?.scene || { x: 0, y: 0, width: metadata.page.mm.width, height: metadata.page.mm.height }
+    const pagePosition = this.calculatePagePosition(metadata.page)
+    const shapesWidth = metadata.page?.px?.width || metadata.image?.width || scene.width
+    const shapesHeight = metadata.page?.px?.height || metadata.image?.height || scene.height
+
+    const buildOverlaySvg = (group, cssClass, { viewBox, location }) => {
+      if (!group) return null
+
+      const svgContainer = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svgContainer.setAttribute('width', '100%')
+      svgContainer.setAttribute('height', '100%')
+      svgContainer.setAttribute('viewBox', viewBox)
+      svgContainer.style.cssText = 'display:block;overflow:visible'
+      svgContainer.classList.add(cssClass)
+      if (metadata.defsGroup) svgContainer.appendChild(metadata.defsGroup.cloneNode(true))
+      svgContainer.appendChild(group.cloneNode(true))
+
+      const wrapper = document.createElement('div')
+      wrapper.style.cssText = 'width:100%;height:100%;overflow:visible'
+      wrapper.appendChild(svgContainer)
+
+      return { svgContainer, wrapper, location }
+    }
 
     for (const [index, viewer] of this.viewers.entries()) {
       const animationRoots = []
 
-      if (metadata.writingZoneGroup) {
-        const shapes = metadata.writingZoneGroup.cloneNode(true)
-        shapes.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
-        const shapeAnimate = shapes.querySelector('animate')
-        if (shapeAnimate) {
-          shapeAnimate.removeAttribute('repeatCount')
-          shapeAnimate.setAttribute('begin', 'indefinite')
-        }
-
-        const svgContainerShapes = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-        svgContainerShapes.setAttribute('width', '100%')
-        svgContainerShapes.setAttribute('height', '100%')
-        svgContainerShapes.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
-        svgContainerShapes.style.cssText = 'display:block'
-        svgContainerShapes.classList.add('shapes')
-        svgContainerShapes.appendChild(shapes)
-
-        // OSD manages this wrapper div: it sets its CSS position/size to match the
-        // world-space rect at every viewport change. The SVG inside scales with it.
-        const shapesWrapper = document.createElement('div')
-        shapesWrapper.id = 'shapesOverlay_' + index
-        shapesWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
-        shapesWrapper.appendChild(svgContainerShapes)
-
+      const shapesOverlay = buildOverlaySvg(metadata.writingZoneGroup, 'shapes', {
+        viewBox: `0 0 ${shapesWidth} ${shapesHeight}`,
+        location: new OSD.Rect(pagePosition.x, pagePosition.y, pagePosition.width, pagePosition.height)
+      })
+      if (shapesOverlay) {
         viewer.addOverlay({
-          element: shapesWrapper,
-          location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
+          element: shapesOverlay.wrapper,
+          location: shapesOverlay.location
         })
 
-        this._shapesSvgEls[index] = svgContainerShapes
-        if (index === 0) this._shapesSvgEl = svgContainerShapes
-        animationRoots.push(svgContainerShapes)
+        this._shapesSvgEls[index] = shapesOverlay.svgContainer
+        if (index === 0) this._shapesSvgEl = shapesOverlay.svgContainer
+        animationRoots.push(shapesOverlay.svgContainer)
       } else {
         this._shapesSvgEls[index] = null
       }
 
-      if (metadata.pageMarginGroup) {
-        // Transcriptions
-        const transcriptions = metadata.pageMarginGroup.cloneNode(true)
-        // transcriptions.setAttribute('style', 'transform: scale(3.55) rotate(.5deg) translate(32px,-30px)')
-        transcriptions.querySelectorAll('animate, animateTransform').forEach(animation => {
-          animation.removeAttribute('repeatCount')
-          animation.setAttribute('begin', 'indefinite')
-          if (typeof animation.endElement === 'function') {
-            try {
-              animation.endElement()
-            } catch (_e) { }
-          }
-        })
-
-        transcriptions.removeAttribute('transform')
-        transcriptions.setAttribute('style', 'transform: scale(.74) translate(6470px, 9320px)')
-
-        const svgContainerTranscriptions = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-        svgContainerTranscriptions.setAttribute('width', '100%')
-        svgContainerTranscriptions.setAttribute('height', '100%')
-        svgContainerTranscriptions.setAttribute('viewBox', `0 0 ${metadata.page.mm.width * 90} ${metadata.page.mm.height * 90}`)
-        svgContainerTranscriptions.style.cssText = 'display:block'
-        svgContainerTranscriptions.classList.add('transcriptions')
-        if (metadata.defsGroup) {
-          svgContainerTranscriptions.appendChild(metadata.defsGroup.cloneNode(true)) // Ensure defs are included for transcription SVGs
-        }
-        svgContainerTranscriptions.appendChild(transcriptions)
-
-        const transcriptionsWrapper = document.createElement('div')
-        transcriptionsWrapper.id = 'transcriptionsOverlay_' + index
-        transcriptionsWrapper.style.cssText = 'width:100%;height:100%;overflow:hidden'
-        transcriptionsWrapper.appendChild(svgContainerTranscriptions)
-
+      const transcriptionsOverlay = buildOverlaySvg(metadata.pageMarginGroup, 'transcriptions', {
+        viewBox: `${scene.x} ${scene.y} ${scene.width} ${scene.height}`,
+        location: new OSD.Rect(scene.x, scene.y, scene.width, scene.height)
+      })
+      if (transcriptionsOverlay) {
         viewer.addOverlay({
-          element: transcriptionsWrapper,
-          location: new OSD.Rect(0, 0, metadata.page.mm.width, metadata.page.mm.height)
+          element: transcriptionsOverlay.wrapper,
+          location: transcriptionsOverlay.location
         })
 
-        this._ftOverlayEls[index] = transcriptionsWrapper
-        this._dtSvgEls[index] = svgContainerTranscriptions
-        if (index === 1) this._dtSvgEl = svgContainerTranscriptions
-        animationRoots.push(svgContainerTranscriptions)
+        this._ftOverlayEls[index] = transcriptionsOverlay.wrapper
+        this._dtSvgEls[index] = transcriptionsOverlay.svgContainer
+        if (index === 1) this._dtSvgEl = transcriptionsOverlay.svgContainer
+        animationRoots.push(transcriptionsOverlay.svgContainer)
       } else {
         this._ftOverlayEls[index] = null
         this._dtSvgEls[index] = null
@@ -1232,14 +1369,58 @@ export class VideTranscrPanels extends HTMLElement {
   calculatePagePosition (page) {
     // console.log('Calculating page position for', page)
 
-    const target = page.image.split('?')[0] // strip query params for tile source URL
+    const parsed = parseImageUrl(page.image || '')
+    const target = (parsed.target || page.image || '').split('?')[0] // strip query params for tile source URL
 
-    const fullImageWidthMm = page.mm.width
+    const tileSource = toIiifInfoJsonUrl(target)
+    const degrees = (Number.isFinite(page.rotate) ? page.rotate : (Number.isFinite(parsed.rotation) ? parsed.rotation : 0)) * -1
 
-    const tileSource = target.replace(/\.(jpg|tif|tiff)$/i, '') + '/info.json'
-    const degrees = page.rotate * -1
+    if (page.placement) {
+      const placement = page.placement
+      const mmPerPx = page.px?.width > 0
+        ? placement.width / page.px.width
+        : 1
+      const height = Number.isFinite(placement.height) && placement.height > 0
+        ? placement.height
+        : (page.px?.height || 0) * mmPerPx
 
-    return { tileSource, x: 0, y: 0, width: fullImageWidthMm, degrees }
+      return {
+        tileSource,
+        x: placement.x || 0,
+        y: placement.y || 0,
+        width: placement.width,
+        height,
+        degrees,
+        mmPerPx
+      }
+    }
+
+    const crop = parsed.xywh || { x: 0, y: 0, w: 0, h: 0 }
+    const hasCrop = crop.w > 0 && crop.h > 0
+    const pageWidthPx = hasCrop ? crop.w : (page.px?.width || 0)
+    const pageHeightPx = hasCrop ? crop.h : (page.px?.height || 0)
+
+    const mmPerPxFromWidth = pageWidthPx > 0 ? (page.mm?.width || 0) / pageWidthPx : 0
+    const mmPerPxFromHeight = pageHeightPx > 0 ? (page.mm?.height || 0) / pageHeightPx : 0
+    const mmPerPx = mmPerPxFromWidth || mmPerPxFromHeight || 1
+
+    const fullImageWidthMm = (page.px?.width || pageWidthPx) * mmPerPx
+    const fullImageHeightMm = (page.px?.height || pageHeightPx) * mmPerPx
+
+    const offsetX = hasCrop ? ((page.mm?.width || 0) - crop.w * mmPerPx) / 2 : 0
+    const offsetY = hasCrop ? ((page.mm?.height || 0) - crop.h * mmPerPx) / 2 : 0
+    const x = hasCrop ? (-crop.x * mmPerPx + offsetX) : 0
+    const y = hasCrop ? (-crop.y * mmPerPx + offsetY) : 0
+
+    return {
+      tileSource,
+      x,
+      y,
+      width: fullImageWidthMm,
+      height: fullImageHeightMm,
+      degrees,
+      mmPerPx
+    }
   }
 
   /**
@@ -1512,9 +1693,15 @@ export class VideTranscrPanels extends HTMLElement {
         success: ({ item }) => {
           this._baseImageItems[panelIndex] = item
           if (opacity !== 1) item.setOpacity(opacity)
+          const scene = page.scene || {
+            x: page.placement?.x || 0,
+            y: page.placement?.y || 0,
+            width: page.placement?.width || page.mm.width,
+            height: page.placement?.height || page.mm.height
+          }
           const bounds = rect
             ? this.calculateRectBounds(rect, pos)
-            : new OSD.Rect(0, 0, page.mm.width, page.mm.height)
+            : new OSD.Rect(scene.x, scene.y, scene.width, scene.height)
           viewer.viewport.fitBounds(bounds, true)
           resolve()
         },

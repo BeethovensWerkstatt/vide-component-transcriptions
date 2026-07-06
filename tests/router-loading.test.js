@@ -38,6 +38,11 @@ if (!customElements.get('vide-transcr-panels')) {
       this.calls = []
     }
 
+    async bootstrapFromFtUri (url) {
+      this.calls.push(['bootstrapFromFtUri', url])
+      return true
+    }
+
     setShapeLinks (value) { this.calls.push(['setShapeLinks', value]) }
     loadPageImage (index, page, opts) { this.calls.push(['loadPageImage', index, page, opts]) }
     loadShapesOverlay (index, page) { this.calls.push(['loadShapesOverlay', index, page]) }
@@ -250,5 +255,61 @@ describe('VideTranscrRouter loading flows', () => {
 
     expect(router.contentEl.root.innerHTML).toContain('Fehler beim Laden')
     expect(router.contentEl.root.innerHTML).toContain('genDesc failed')
+  })
+
+  it('loadWritingZone prefers genDesc.ft.uri bootstrap and skips legacy fallback', async () => {
+    const router = makeRouter()
+
+    const overview = [
+      {
+        source: {
+          pages: [
+            {
+              writingZones: [
+                {
+                  label: '1',
+                  identifier: { genDescId: 'gd1' },
+                  sketchProps: { staves: 1 },
+                  wzProps: { layers: ['a'] },
+                  workRelations: []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+
+    const genDesc = {
+      ft: {
+        uri: 'https://example.org/new-ft.svg'
+      },
+      writingZones: [
+        {
+          page: {
+            image: 'https://example.org/iiif#xywh=1,2,3,4&rotate=0',
+            px: { width: 100, height: 100 },
+            mm: { width: 10, height: 10 }
+          },
+          shapeLinks: { a: ['b'] }
+        }
+      ]
+    }
+
+    fetchCached
+      .mockResolvedValueOnce(overview)
+      .mockResolvedValueOnce(genDesc)
+
+    await router.loadWritingZone('NK', 'wz1.1')
+
+    const panelsEl = router.contentEl.querySelector('vide-transcr-panels')
+    const bootstrapCall = panelsEl.calls.find(call => call[0] === 'bootstrapFromFtUri')
+
+    expect(bootstrapCall).toBeTruthy()
+    expect(bootstrapCall[1]).toBe('https://example.org/new-ft.svg')
+    expect(panelsEl.calls.some(call => call[0] === 'setShapeLinks')).toBe(true)
+    expect(panelsEl.calls.some(call => call[0] === 'loadPageImage')).toBe(false)
+    expect(panelsEl.calls.some(call => call[0] === 'loadShapesOverlay')).toBe(false)
+    expect(panelsEl.calls.some(call => call[0] === 'loadFtOverlay')).toBe(false)
   })
 })
