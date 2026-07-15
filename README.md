@@ -10,3 +10,5 @@ The root component accepts configuration in three ways:
 - `<vide-transcr config-src="/vide-component-transcriptions/config.json"></vide-transcr>`
 
 `documents` may use absolute URLs or paths relative to `apiBase`.
+
+The facsimile component follows the same external configuration contract (`api-base` + `documents`) for consistency across both web components.
