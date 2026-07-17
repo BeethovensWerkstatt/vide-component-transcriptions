@@ -43,6 +43,24 @@ describe('VideTranscrRouter', () => {
       expect(initSpy).toHaveBeenCalledOnce()
       initSpy.mockRestore()
     })
+
+    it('normalizes custom apiBase and document paths', () => {
+      const app = document.createElement('div')
+      app.appendChild(document.createElement('vide-transcr-content'))
+      const initSpy = vi.spyOn(VideTranscrRouter.prototype, 'init').mockImplementation(() => {})
+
+      const router = new VideTranscrRouter(app, {
+        apiBase: 'https://example.org/exist/apps/api/document',
+        documents: {
+          NK: '/custom/overview.json'
+        }
+      })
+
+      expect(router.apiBase).toBe('https://example.org/exist/apps/api/document')
+      expect(router.documents.NK).toBe('https://example.org/exist/apps/api/document/custom/overview.json')
+
+      initSpy.mockRestore()
+    })
   })
 
   describe('route dispatch', () => {

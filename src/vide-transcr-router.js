@@ -1,11 +1,34 @@
 import { fetchCached } from './data-cache.js'
 
-const API_BASE = 'http://localhost:8080/exist/apps/api/document'
+const DEFAULT_API_BASE = 'http://localhost:8080/exist/apps/api'
 
-// Map of short document IDs used in URLs to their overview endpoint
-const DOCUMENTS = {
-  NK: `${API_BASE}/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json`
+// Map of short document IDs used in URLs to their overview endpoint paths.
+// The paths are resolved against the API base so deployments can override the host.
+const DEFAULT_DOCUMENT_PATHS = {
+  NK: '/document/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json'
 }
+
+function isAbsoluteUrl (value) {
+  return /^(?:[a-z][a-z\d+.-]*:)?\/\//i.test(String(value || ''))
+}
+
+function resolveUrl (baseUrl, value) {
+  const raw = String(value || '')
+  if (!raw) return raw
+  if (isAbsoluteUrl(raw)) return raw
+
+  const trimmedBase = String(baseUrl || '').replace(/\/+$/, '')
+  if (raw.startsWith('/')) return `${trimmedBase}${raw}`
+  return `${trimmedBase}/${raw}`
+}
+
+function buildDocumentMap (apiBase, documentPaths) {
+  return Object.fromEntries(
+    Object.entries(documentPaths || {}).map(([docId, path]) => [docId, resolveUrl(apiBase, path)])
+  )
+}
+
+const DEFAULT_DOCUMENTS = buildDocumentMap(DEFAULT_API_BASE, DEFAULT_DOCUMENT_PATHS)
 
 // Toggle if API rotation direction and OSD rotation direction differ.
 const INVERT_FT_ROTATION_DIRECTION = false
@@ -16,9 +39,11 @@ const INVERT_FT_ROTATION_DIRECTION = false
  * Handles navigation between different transcription views.
  */
 export class VideTranscrRouter {
-  constructor (appElement) {
+  constructor (appElement, config = {}) {
     this.basePath = '/transcription'
     this.app = appElement
+    this.apiBase = config.apiBase || DEFAULT_API_BASE
+    this.documents = buildDocumentMap(this.apiBase, config.documents || DEFAULT_DOCUMENT_PATHS)
     this.contentEl = appElement.querySelector('vide-transcr-content')
 
     if (!this.contentEl) {
@@ -31,7 +56,7 @@ export class VideTranscrRouter {
 
   init () {
     // Eagerly prefetch all known overview documents into the cache
-    Object.values(DOCUMENTS).forEach(url => fetchCached(url).catch(() => {}))
+    Object.values(this.getDocuments()).forEach(url => fetchCached(url).catch(() => {}))
 
     // Check for ?_path parameter (from 404 redirect)
     const urlParams = new URLSearchParams(window.location.search)
@@ -81,6 +106,7 @@ export class VideTranscrRouter {
    */
   route (path) {
     const segments = path.split('/').filter(Boolean)
+    const documents = this.getDocuments()
 
     if (segments.length === 0) {
       this.renderHome()
@@ -88,7 +114,7 @@ export class VideTranscrRouter {
     }
 
     const docId = segments[0]
-    if (!DOCUMENTS[docId]) {
+    if (!documents[docId]) {
       this.renderNotFound(path)
       return
     }
@@ -108,10 +134,11 @@ export class VideTranscrRouter {
    * @param {string} docId  e.g. 'NK'
    */
   async loadDocument (docId) {
+    const documents = this.getDocuments()
     this.contentEl.setContent(`
       <div class="transcr-loading"><p>Lade Dokument <code>${this.escapeHtml(docId)}</code> …</p></div>
     `)
-    const overviewUrl = DOCUMENTS[docId]
+    const overviewUrl = documents[docId]
     try {
       const data = await fetchCached(overviewUrl)
       const sourceData = data[0]
@@ -149,6 +176,8 @@ export class VideTranscrRouter {
    * @param {string} wzSpec  e.g. 'wz1.1'
    */
   async loadWritingZone (docId, wzSpec) {
+    const documents = this.getDocuments()
+    const apiBase = this.getApiBase()
     this.contentEl.setContent(`
       <div class="transcr-loading"><p>Lade Schreibzone <code>${this.escapeHtml(wzSpec)}</code> …</p></div>
     `)
@@ -159,7 +188,7 @@ export class VideTranscrRouter {
       return
     }
 
-    const overviewUrl = DOCUMENTS[docId]
+    const overviewUrl = documents[docId]
     try {
       const data = await fetchCached(overviewUrl)
       const pages = data[0].source.pages
@@ -183,7 +212,7 @@ export class VideTranscrRouter {
       }
 
       // Fetch genDesc data (cached)
-      const genDescUrl = `${API_BASE}/genDesc/${genDescId}.json`
+      const genDescUrl = `${apiBase}/genDesc/${genDescId}.json`
       const genDescData = await fetchCached(genDescUrl)
 
       // Mount the three-panel OSD viewer
@@ -294,6 +323,14 @@ export class VideTranscrRouter {
     } catch (err) {
       this.renderError('Fehler beim Laden', err)
     }
+  }
+
+  getApiBase () {
+    return this.apiBase || DEFAULT_API_BASE
+  }
+
+  getDocuments () {
+    return this.documents || DEFAULT_DOCUMENTS
   }
 
   renderHome () {
