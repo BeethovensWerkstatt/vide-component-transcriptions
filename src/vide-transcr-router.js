@@ -1,11 +1,11 @@
 import { fetchCached } from './data-cache.js'
 
-const DEFAULT_API_BASE = 'http://localhost:8080/exist/apps/api/document'
+const DEFAULT_API_BASE = 'http://localhost:8080/exist/apps/api'
 
 // Map of short document IDs used in URLs to their overview endpoint paths.
 // The paths are resolved against the API base so deployments can override the host.
 const DEFAULT_DOCUMENT_PATHS = {
-  NK: '/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json'
+  NK: '/document/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json'
 }
 
 function isAbsoluteUrl (value) {
