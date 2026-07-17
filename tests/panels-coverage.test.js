@@ -489,9 +489,38 @@ describe('VideTranscrPanels coverage-focused tests', () => {
     const panel1Path = panels._dtSvgEls[1].querySelector('path')
     const panel2Path = panels._dtSvgEls[2].querySelector('path')
     const panel1Transform = panel1Path.getAttribute('transform').match(/translate\(([-\d.]+)\s+([-\d.]+)\)/)
-    expect(parseFloat(panel1Transform[1])).toBeCloseTo(4.285714285714286, 12)
+    expect(parseFloat(panel1Transform[1])).toBeCloseTo(2.857142857142857, 12)
     expect(parseFloat(panel1Transform[2])).toBeCloseTo(0, 12)
     expect(panel2Path.getAttribute('transform')).toBe('translate(10 0)')
+  })
+
+  it('keeps keyed animation values aligned with 1-based phase numbers', () => {
+    const panels = createPanels()
+    const addOverlay = vi.fn()
+    panels.viewers = [{ addOverlay }, { addOverlay }, { addOverlay }]
+
+    const svgDoc = new DOMParser().parseFromString(
+      '<svg xmlns="http://www.w3.org/2000/svg"><g class="page-margin"><path d="M1818 600 L1818 1049.4005708848717"><animate attributeName="d" values="M1818 600 L1818 1049.4005708848717;M1818 600 L1818 1049.4005708848717;M1818 600 L1818 1049.4005708848717;M1818 600 L1818 1141;M1818 600 L1818 1141;M1818 600 L1818 1141;M1818 600 L1818 1141;M1818 600 L1818 1141"/></path></g></svg>',
+      'image/svg+xml'
+    )
+
+    const metadata = {
+      page: { mm: { width: 10, height: 10 } },
+      writingZoneGroup: null,
+      pageMarginGroup: svgDoc.querySelector('g.page-margin'),
+      defsGroup: null
+    }
+
+    panels._panelStepValues = [1, 3, 8]
+    panels.loadOverlayLayers(metadata)
+
+    const phase3Stem = panels._dtSvgEls[1].querySelector('path').getAttribute('d').match(/L1818\s+([\d.]+)/)
+    expect(parseFloat(phase3Stem[1])).toBeCloseTo(1049.4005708848717, 2)
+
+    panels._applyStepValue(1, 4, { commit: false, syncUi: false })
+
+    const phase4Stem = panels._dtSvgEls[1].querySelector('path').getAttribute('d').match(/L1818\s+([\d.]+)/)
+    expect(parseFloat(phase4Stem[1])).toBeCloseTo(1141, 2)
   })
 
   it('covers loadShapesOverlay guards and error branches', async () => {

@@ -923,9 +923,9 @@ export class VideTranscrPanels extends HTMLElement {
       ftOpacity = 1
     }
 
-    // Shift animation by one stage so panel phase labels and transcription
-    // keyframes line up (e.g. stage 3 already shows the first transcription step).
-    const animationProgress = step / 7
+    // UI stages are 1-based while animation keyframes start at progress 0.
+    // Map stage 1 -> 0/7 and stage 8 -> 7/7 so keyed values line up exactly.
+    const animationProgress = (step - 1) / 7
 
     const imageItem = this._baseImageItems[panelIndex]
     if (imageItem) imageItem.setOpacity(Math.max(0, Math.min(1, imageOpacity)))
