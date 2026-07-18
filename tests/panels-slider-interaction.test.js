@@ -52,6 +52,24 @@ describe('panel slider interactions', () => {
     expect(slider.value).toBe('6.2')
   })
 
+  it('updates each panel phase at the halfway point during slider input', () => {
+    const panels = document.createElement(TEST_TAG)
+    panels.render()
+
+    const slider = panels.querySelector('[data-step-slider="0"]')
+    const panel = panels.querySelector('#transcr-panel-0')
+
+    expect(panel.classList.contains('phase2')).toBe(true)
+
+    slider.value = '7.49'
+    slider.dispatchEvent(new Event('input'))
+    expect(panel.classList.contains('phase7')).toBe(true)
+
+    slider.value = '7.5'
+    slider.dispatchEvent(new Event('input'))
+    expect(panel.classList.contains('phase8')).toBe(true)
+  })
+
   it('commits fractional slider values when step snapping is disabled', () => {
     const panels = document.createElement(TEST_TAG)
     panels.setAttribute('step-snapping', 'off')

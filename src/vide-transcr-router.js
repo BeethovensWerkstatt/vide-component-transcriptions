@@ -43,7 +43,10 @@ export class VideTranscrRouter {
     this.basePath = '/transcription'
     this.app = appElement
     this.apiBase = config.apiBase || DEFAULT_API_BASE
-    this.documents = buildDocumentMap(this.apiBase, config.documents || DEFAULT_DOCUMENT_PATHS)
+    const documentPaths = config.documents && Object.keys(config.documents).length > 0
+      ? config.documents
+      : DEFAULT_DOCUMENT_PATHS
+    this.documents = buildDocumentMap(this.apiBase, documentPaths)
     this.contentEl = appElement.querySelector('vide-transcr-content')
 
     if (!this.contentEl) {

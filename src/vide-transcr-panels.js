@@ -52,6 +52,7 @@ const STEP_LABELS = [
 ]
 
 const STEP_SNAPPING_ATTRIBUTE = 'step-snapping'
+const PHASE_CLASSES = Array.from({ length: 8 }, (_, index) => `phase${index + 1}`)
 
 const SINGLE_TRANSCRIPTION_SVG_URL = new URL('../sampleData/D-BNba_MH_60_Engelmann_p029_wz05_reel.svg', import.meta.url).href
 const STRUCTURED_SVG_TEXT_CACHE = (window.__BW_TranscriptionsSvgTextCache ??= new Map())
@@ -766,7 +767,7 @@ export class VideTranscrPanels extends HTMLElement {
                 <button type="button" class="transcr-step-btn" data-step-next="${i}" aria-label="Nächste Stufe">&gt;</button>
               </div>
             </h3>
-            <div class="transcr-panel" id="transcr-panel-${i}"></div>
+            <div class="transcr-panel phase${this._snapStep(this._panelStepValues[i])}" id="transcr-panel-${i}"></div>
           </div>
         `).join('')}
       </div>
@@ -894,6 +895,12 @@ export class VideTranscrPanels extends HTMLElement {
     const step = Math.max(1, Math.min(8, rawStep))
     const committed = this._normalizeCommittedStep(step)
     if (commit) this._panelStepValues[panelIndex] = committed
+
+    const panel = this.querySelector(`#transcr-panel-${panelIndex}`)
+    if (panel) {
+      panel.classList.remove(...PHASE_CLASSES)
+      panel.classList.add(`phase${this._snapStep(step)}`)
+    }
 
     // Facsimile: full visible at steps 1-2, 50% at 3, then fade to 0 by 4.
     let imageOpacity = 0

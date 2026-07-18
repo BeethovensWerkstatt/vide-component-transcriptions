@@ -61,6 +61,18 @@ describe('VideTranscrRouter', () => {
 
       initSpy.mockRestore()
     })
+
+    it('uses the default documents when the runtime configuration is empty', () => {
+      const app = document.createElement('div')
+      app.appendChild(document.createElement('vide-transcr-content'))
+      const initSpy = vi.spyOn(VideTranscrRouter.prototype, 'init').mockImplementation(() => {})
+
+      const router = new VideTranscrRouter(app, { documents: {} })
+
+      expect(router.documents.NK).toBe('http://localhost:8080/exist/apps/api/document/m57bab171-9222-451d-8f7d-7fe7db6064bb/overview.json')
+
+      initSpy.mockRestore()
+    })
   })
 
   describe('route dispatch', () => {

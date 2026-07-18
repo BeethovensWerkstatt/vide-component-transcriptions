@@ -255,6 +255,11 @@ vide-transcr-panels {
       width: 100% !important;
       height: 100% !important;
     }
+
+    &.phase8 .choice > .orig {
+      stroke: #028cc2;
+      fill: #028cc2;
+    }
   }
 }
 
