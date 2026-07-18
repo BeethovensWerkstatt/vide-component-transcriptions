@@ -215,7 +215,8 @@ export class VideTranscrRouter {
       }
 
       // Fetch genDesc data (cached)
-      const genDescUrl = `${apiBase}/genDesc/${genDescId}.json`
+      // TODO: this should not include /document, but this requires a change to the API
+      const genDescUrl = `${apiBase}/document/genDesc/${genDescId}.json`
       const genDescData = await fetchCached(genDescUrl)
 
       // Mount the three-panel OSD viewer
