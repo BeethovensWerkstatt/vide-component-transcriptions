@@ -43,6 +43,11 @@ if (!customElements.get('vide-transcr-panels')) {
       return true
     }
 
+    async bootstrapFromSvgText (svgText) {
+      this.calls.push(['bootstrapFromSvgText', svgText])
+      return true
+    }
+
     setShapeLinks (value) { this.calls.push(['setShapeLinks', value]) }
     loadPageImage (index, page, opts) { this.calls.push(['loadPageImage', index, page, opts]) }
     loadShapesOverlay (index, page) { this.calls.push(['loadShapesOverlay', index, page]) }
@@ -311,5 +316,48 @@ describe('VideTranscrRouter loading flows', () => {
     expect(panelsEl.calls.some(call => call[0] === 'loadPageImage')).toBe(false)
     expect(panelsEl.calls.some(call => call[0] === 'loadShapesOverlay')).toBe(false)
     expect(panelsEl.calls.some(call => call[0] === 'loadFtOverlay')).toBe(false)
+  })
+
+  it('toggles debug mode and loads a selected SVG without document setup', async () => {
+    const router = makeRouter()
+    router.debugEnabled = false
+    router.app = document.createElement('div')
+    router.init = VideTranscrRouter.prototype.init
+    window.debug = undefined
+    router.init()
+
+    const panelsEl = document.createElement('vide-transcr-panels')
+    router.contentEl.root.innerHTML = `
+      <div id="side-panel">
+        <button class="side-panel-tab active" data-panel="info">Info</button>
+        <button class="side-panel-tab debug-upload-tab" data-panel="upload" hidden>Debug</button>
+        <header class="transcription-header"><span class="transcription-header-title">NK 1/6</span></header>
+        <div class="panel-section active" data-panel="info"></div>
+        <div class="panel-section debug-upload-section" data-panel="upload" hidden>
+          <input class="debug-svg-upload" type="file">
+          <p class="debug-upload-status"></p>
+        </div>
+      </div>
+    `
+    router.contentEl.root.appendChild(panelsEl)
+
+    router.setupSidePanel()
+    router.setupDebugSvgUpload()
+    window.debug(true)
+
+    const input = router.contentEl.querySelector('.debug-svg-upload')
+    const file = new File(['<svg/>'], 'local.svg', { type: 'image/svg+xml' })
+    Object.defineProperty(input, 'files', { value: [file] })
+    input.dispatchEvent(new Event('change'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(router.contentEl.querySelector('.debug-upload-tab').hidden).toBe(false)
+    expect(router.contentEl.querySelector('.side-panel-tab[data-panel="info"]').disabled).toBe(true)
+    expect(router.contentEl.querySelector('.transcription-header').hidden).toBe(true)
+    expect(panelsEl.calls).toContainEqual(['bootstrapFromSvgText', '<svg/>'])
+
+    window.debug(false)
+    expect(router.contentEl.querySelector('.debug-upload-tab').hidden).toBe(true)
+    expect(router.contentEl.querySelector('.side-panel-tab[data-panel="info"]').disabled).toBe(false)
   })
 })

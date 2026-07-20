@@ -48,6 +48,7 @@ export class VideTranscrRouter {
       : DEFAULT_DOCUMENT_PATHS
     this.documents = buildDocumentMap(this.apiBase, documentPaths)
     this.contentEl = appElement.querySelector('vide-transcr-content')
+    this.debugEnabled = false
 
     if (!this.contentEl) {
       console.error('[VideTranscr] Content component not found')
@@ -58,6 +59,8 @@ export class VideTranscrRouter {
   }
 
   init () {
+    window.debug = enabled => this.setDebugMode(enabled)
+
     // Eagerly prefetch all known overview documents into the cache
     Object.values(this.getDocuments()).forEach(url => fetchCached(url).catch(() => {}))
 
@@ -225,21 +228,30 @@ export class VideTranscrRouter {
           <vide-transcr-panels step-snapping="off"></vide-transcr-panels>
           <div class="side-panel" id="side-panel">
             <div class="side-panel-tabs">
-              <button class="side-panel-tab active" data-panel="info">
+              <button class="side-panel-tab${this.debugEnabled ? '' : ' active'}" data-panel="info"${this.debugEnabled ? ' disabled' : ''}>
                 <span class="tab-label">Info</span>
+              </button>
+              <button class="side-panel-tab debug-upload-tab${this.debugEnabled ? ' active' : ''}" data-panel="upload"${this.debugEnabled ? '' : ' hidden'}>
+                <span class="tab-label">Debug</span>
               </button>
             </div>
             <div class="side-panel-content" id="side-panel-content">
-              <header class="transcription-header">
-                <span class="transcription-header-title">Hallo</span>
+              <header class="transcription-header"${this.debugEnabled ? ' hidden' : ''}>
+                <span class="transcription-header-title"></span>
               </header>
-              <div class="panel-section active" data-panel="info"></div>
+              <div class="panel-section${this.debugEnabled ? '' : ' active'}" data-panel="info"></div>
+              <div class="panel-section debug-upload-section${this.debugEnabled ? ' active' : ''}" data-panel="upload"${this.debugEnabled ? '' : ' hidden'}>
+                <label class="debug-upload-label" for="debug-svg-upload">SVG-Datei</label>
+                <input id="debug-svg-upload" class="debug-svg-upload" type="file" accept=".svg,image/svg+xml">
+                <p class="debug-upload-status" role="status"></p>
+              </div>
             </div>
           </div>
         </div>
       `)
 
       this.setupSidePanel()
+      this.setupDebugSvgUpload()
 
       // Build ordered list of all overview zones that share this genDescId.
       // Their position in this list (document order) maps 1:1 to genDescData.writingZones[i].
@@ -263,8 +275,8 @@ export class VideTranscrRouter {
       const panelsEl = this.contentEl.querySelector('vide-transcr-panels')
 
       // Set the title in the side-panel header (lives outside <vide-transcr-panels>)
-      const headerTitle = this.contentEl.querySelector('.transcription-header-title')
-      if (headerTitle) headerTitle.textContent = `${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`
+      this.currentHeaderTitle = `${docId} ${coords.pageIndex + 1}/${coords.wzIndex + 1}`
+      this.updateDebugUi()
 
       const atData = genDescData.at ?? {}
       if (atData.dtLinks) panelsEl.setAtLinks(atData.dtLinks)
@@ -394,8 +406,78 @@ export class VideTranscrRouter {
           wasOpen = true
           tabs.forEach(t => t.classList.remove('active'))
           tab.classList.add('active')
+          this.contentEl.querySelectorAll('.panel-section').forEach(section => {
+            section.classList.toggle('active', section.dataset.panel === tab.dataset.panel)
+          })
         }
       })
+    })
+  }
+
+  /**
+   * Enable or disable the local SVG upload tab.
+   * Exposed as window.debug(true|false).
+   * @param {boolean} enabled
+   */
+  setDebugMode (enabled) {
+    this.debugEnabled = Boolean(enabled)
+    this.updateDebugUi()
+  }
+
+  /**
+   * Synchronize the current side-panel UI with debug mode.
+   */
+  updateDebugUi () {
+    const showUpload = this.debugEnabled
+    const uploadTab = this.contentEl?.querySelector('.debug-upload-tab')
+    const uploadSection = this.contentEl?.querySelector('.debug-upload-section')
+    const infoTab = this.contentEl?.querySelector('.side-panel-tab[data-panel="info"]')
+    const infoSection = this.contentEl?.querySelector('.panel-section[data-panel="info"]')
+    const header = this.contentEl?.querySelector('.transcription-header')
+    const headerTitle = this.contentEl?.querySelector('.transcription-header-title')
+    const sidePanel = this.contentEl?.querySelector('#side-panel')
+
+    if (uploadTab) uploadTab.hidden = !showUpload
+    if (uploadSection) uploadSection.hidden = !showUpload
+    if (infoTab) infoTab.disabled = showUpload
+    if (header) header.hidden = showUpload
+    if (headerTitle) headerTitle.textContent = showUpload ? '' : (this.currentHeaderTitle || '')
+
+    if (showUpload && uploadTab && uploadSection) {
+      sidePanel?.classList.remove('collapsed')
+      infoTab?.classList.remove('active')
+      infoSection?.classList.remove('active')
+      uploadTab.classList.add('active')
+      uploadSection.classList.add('active')
+    } else if (infoTab && infoSection) {
+      uploadTab?.classList.remove('active')
+      uploadSection?.classList.remove('active')
+      infoTab.classList.add('active')
+      infoSection.classList.add('active')
+    }
+  }
+
+  /**
+   * Load a selected SVG file directly into the three transcription panels.
+   */
+  setupDebugSvgUpload () {
+    const input = this.contentEl.querySelector('.debug-svg-upload')
+    const status = this.contentEl.querySelector('.debug-upload-status')
+    const panelsEl = this.contentEl.querySelector('vide-transcr-panels')
+    if (!input || !status || !panelsEl) return
+
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      status.textContent = `Lade ${file.name} ...`
+      try {
+        const loaded = await panelsEl.bootstrapFromSvgText(await file.text())
+        status.textContent = loaded ? `${file.name} geladen.` : `${file.name} konnte nicht geladen werden.`
+      } catch (err) {
+        console.error('[VideTranscr] SVG upload failed', err)
+        status.textContent = `Fehler beim Laden von ${file.name}.`
+      }
     })
   }
 

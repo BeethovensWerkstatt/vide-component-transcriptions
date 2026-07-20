@@ -173,6 +173,8 @@ vide-transcr-content {
           z-index: 2;
           .tab-label { color: #333; }
         }
+
+        &[hidden] { display: none; }
       }
     }
 
@@ -189,6 +191,19 @@ vide-transcr-content {
       .panel-section {
         display: none;
         &.active { display: block; }
+      }
+
+      .debug-upload-section {
+        font-size: 0.9rem;
+
+        .debug-upload-label,
+        .debug-svg-upload {
+          display: block;
+        }
+
+        .debug-upload-label { margin-bottom: 0.4rem; }
+        .debug-svg-upload { max-width: 100%; }
+        .debug-upload-status { min-height: 1.4em; }
       }
     }
   }

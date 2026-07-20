@@ -618,11 +618,28 @@ export class VideTranscrPanels extends HTMLElement {
     return this._bootstrapPromise
   }
 
+  /**
+   * Bootstrap transcription panels from structured FT SVG markup.
+   * @param {string} svgText
+   * @returns {Promise<boolean>}
+   */
+  bootstrapFromSvgText (svgText) {
+    if (!svgText) return Promise.resolve(false)
+
+    this._bootstrapSourceUrl = null
+    this._bootstrapPromise = this._runSingleSvgBootstrapText(svgText)
+    return this._bootstrapPromise
+  }
+
   async _runSingleSvgBootstrap (svgUrl) {
+    const svgText = await loadSvgTextCached(svgUrl)
+    return this._runSingleSvgBootstrapText(svgText)
+  }
+
+  async _runSingleSvgBootstrapText (svgText) {
     await this._ensureMountedViewersReady()
     this._ensureViewerSync()
 
-    const svgText = await loadSvgTextCached(svgUrl)
     const svgDom = parseSvgDocument(svgText)
     const metadata = prepareDataForTranscriptions(svgDom)
 
