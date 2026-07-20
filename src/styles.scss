@@ -455,6 +455,44 @@ svg.atTranscription {
       padding-left: 1rem;
     }
   }
+
+  .midi-playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+
+    .midi-play-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      flex: 0 0 2rem;
+      padding: 0;
+      border: 1px solid #555;
+      border-radius: 3px;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+      font-size: 0.85rem;
+
+      &:hover:not(:disabled) { background: #f0f0f0; }
+      &:disabled { cursor: wait; opacity: 0.65; }
+    }
+
+    .midi-version-select {
+      min-width: 0;
+      flex: 1 1 auto;
+      height: 2rem;
+      padding: 0 0.4rem;
+      border: 1px solid #777;
+      border-radius: 3px;
+      background: #fff;
+      color: #333;
+      font: inherit;
+    }
+  }
 }
 
 .transcr-step-slider {

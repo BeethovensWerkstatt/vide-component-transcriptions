@@ -425,6 +425,44 @@ describe('VideTranscrRouter', () => {
       expect(panel.querySelectorAll('.wz-nav-item.active').length).toBe(1)
       expect(panel.innerHTML).toContain('/transcription/NK/wz1.1/')
     })
+
+    it('derives MIDI URLs and plays the selected notation version', async () => {
+      const router = makeRouter()
+      const midiJs = { play: vi.fn(), stop: vi.fn() }
+      window.MIDIjs = midiJs
+      router.contentEl.innerHTML = '<div class="panel-section" data-panel="info"></div>'
+
+      const midiUrls = router.getMidiUrls('https://dev-api2.beethovens-werkstatt.de/document/ft/D-BNba_MH_60_Engelmann_p005_wz07_at.svg')
+      expect(midiUrls).toEqual({
+        orig: 'https://dev-api2.beethovens-werkstatt.de/document/midi/D-BNba_MH_60_Engelmann_p005_wz07_at_orig.mid',
+        reg: 'https://dev-api2.beethovens-werkstatt.de/document/midi/D-BNba_MH_60_Engelmann_p005_wz07_at_reg.mid'
+      })
+      expect(router.getMidiUrls('https://dev-api2.beethovens-werkstatt.de/document/prerendered/D-BNba_MH_60_Engelmann_p005_wz07_ft.svg')).toEqual(midiUrls)
+
+      router.populateWzMetadata({}, { midiUrls })
+      router.setupMidiPlayback()
+
+      const button = router.contentEl.querySelector('.midi-play-button')
+      const select = router.contentEl.querySelector('.midi-version-select')
+      await button.click()
+
+      expect(midiJs.play).toHaveBeenCalledWith(midiUrls.orig)
+      expect(button.getAttribute('aria-label')).toBe('Wiedergabe stoppen')
+
+      select.value = 'reg'
+      select.dispatchEvent(new Event('change'))
+      expect(midiJs.stop).toHaveBeenCalled()
+
+      await button.click()
+      expect(midiJs.play).toHaveBeenCalledWith(midiUrls.reg)
+    })
+
+    it('does not derive MIDI URLs from an unrelated SVG URL', () => {
+      const router = makeRouter()
+
+      expect(router.getMidiUrls('https://example.org/other.svg')).toBeNull()
+      expect(router.getMidiUrls('https://example.org/document/ft/no-suffix.svg')).toBeNull()
+    })
   })
 
   describe('programmatic navigation', () => {

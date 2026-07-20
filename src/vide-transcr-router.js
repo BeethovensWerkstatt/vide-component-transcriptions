@@ -1,6 +1,27 @@
 import { fetchCached } from './data-cache.js'
 
 const DEFAULT_API_BASE = 'http://localhost:8080/exist/apps/api'
+const MIDIJS_SCRIPT_URL = new URL('./vendor/midijs/midi.js', import.meta.url).href
+
+let midiJsPromise
+
+function loadMidiJs () {
+  if (window.MIDIjs) return Promise.resolve(window.MIDIjs)
+  if (midiJsPromise) return midiJsPromise
+
+  midiJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = MIDIJS_SCRIPT_URL
+    script.async = true
+    script.onload = () => window.MIDIjs
+      ? resolve(window.MIDIjs)
+      : reject(new Error('MIDIjs wurde nicht initialisiert.'))
+    script.onerror = () => reject(new Error('MIDIjs konnte nicht geladen werden.'))
+    document.head.appendChild(script)
+  })
+
+  return midiJsPromise
+}
 
 // Map of short document IDs used in URLs to their overview endpoint paths.
 // The paths are resolved against the API base so deployments can override the host.
@@ -270,7 +291,14 @@ export class VideTranscrRouter {
         0
       )
 
-      this.populateWzMetadata(wz, { docId, wzOccurrences, activeOccIdx })
+      const ftSvgUrl = genDescData.ft?.uri
+      this.populateWzMetadata(wz, {
+        docId,
+        wzOccurrences,
+        activeOccIdx,
+        midiUrls: this.getMidiUrls(ftSvgUrl)
+      })
+      this.setupMidiPlayback()
 
       const panelsEl = this.contentEl.querySelector('vide-transcr-panels')
 
@@ -286,7 +314,6 @@ export class VideTranscrRouter {
       if (activeWz?.shapeLinks) panelsEl.setShapeLinks(activeWz.shapeLinks)
 
       let loadedStructured = false
-      const ftSvgUrl = genDescData.ft?.uri
       if (ftSvgUrl && typeof panelsEl.bootstrapFromFtUri === 'function') {
         loadedStructured = await panelsEl.bootstrapFromFtUri(ftSvgUrl)
       }
@@ -484,7 +511,7 @@ export class VideTranscrRouter {
   /**
    * Populate the info panel with metadata for the current writing zone.
    * @param {Object} zone  Writing-zone entry from the overview JSON
-   * @param {{ docId: string, wzOccurrences: Array, activeOccIdx: number }} [opts]
+  * @param {{ docId: string, wzOccurrences: Array, activeOccIdx: number, midiUrls: {orig: string, reg: string}|null }} [opts]
    */
   populateWzMetadata (zone, opts = {}) {
     const panel = this.contentEl.querySelector('.panel-section[data-panel="info"]')
@@ -509,7 +536,106 @@ export class VideTranscrRouter {
     }
 
     html += this.createWzMetadata(zone)
+    if (opts.midiUrls) html += this.createMidiPlayback(opts.midiUrls)
     panel.innerHTML = html
+  }
+
+  /**
+   * Build the available MIDI URLs from the structured transcription SVG URL.
+   * @param {string} ftSvgUrl
+   * @returns {{orig: string, reg: string}|null}
+   */
+  getMidiUrls (ftSvgUrl) {
+    if (!ftSvgUrl) return null
+
+    try {
+      const svgUrl = new URL(ftSvgUrl, window.location.href)
+      const documentPath = '/document/'
+      const documentPathIndex = svgUrl.pathname.indexOf(documentPath)
+      const [source, filename] = svgUrl.pathname
+        .slice(documentPathIndex + documentPath.length)
+        .split('/')
+      if (documentPathIndex === -1 || !['ft', 'prerendered'].includes(source)) return null
+
+      const midiFilename = filename.endsWith('_ft.svg')
+        ? `${filename.slice(0, -7)}_at`
+        : filename.endsWith('_at.svg')
+          ? filename.slice(0, -4)
+          : null
+      if (!midiFilename) return null
+
+      const midiPath = `${svgUrl.pathname.slice(0, documentPathIndex)}/document/midi/${midiFilename}`
+      return {
+        orig: new URL(`${midiPath}_orig.mid`, svgUrl.origin).href,
+        reg: new URL(`${midiPath}_reg.mid`, svgUrl.origin).href
+      }
+    } catch (err) {
+      return null
+    }
+  }
+
+  /**
+   * Create the MIDI playback controls for a writing zone.
+   * @param {{orig: string, reg: string}} midiUrls
+   * @returns {string} HTML string
+   */
+  createMidiPlayback (midiUrls) {
+    return `
+      <div class="metadata-section midi-playback">
+        <div class="metadata-section-title">Verklanglichung</div>
+        <div class="metadata-section-content midi-playback-controls">
+          <button class="midi-play-button" type="button" aria-label="Wiedergabe starten" title="Wiedergabe starten" data-midi-orig="${this.escapeHtml(midiUrls.orig)}" data-midi-reg="${this.escapeHtml(midiUrls.reg)}">&#9654;</button>
+          <select class="midi-version-select" aria-label="Notationsversion für die Wiedergabe">
+            <option value="orig">Audio: Editorische Ergänzung</option>
+            <option value="reg">Audio: Editorische Eingriffe</option>
+          </select>
+        </div>
+      </div>
+    `
+  }
+
+  /**
+   * Bind the MIDI playback controls after the info panel has been rendered.
+   */
+  setupMidiPlayback () {
+    const button = this.contentEl.querySelector('.midi-play-button')
+    const select = this.contentEl.querySelector('.midi-version-select')
+    if (!button || !select) return
+
+    let isPlaying = false
+    const setPlaying = playing => {
+      isPlaying = playing
+      button.setAttribute('aria-label', playing ? 'Wiedergabe stoppen' : 'Wiedergabe starten')
+      button.setAttribute('title', playing ? 'Wiedergabe stoppen' : 'Wiedergabe starten')
+      button.innerHTML = playing ? '&#9632;' : '&#9654;'
+    }
+    const stop = () => {
+      window.MIDIjs?.stop()
+      setPlaying(false)
+    }
+
+    button.addEventListener('click', async () => {
+      if (isPlaying) {
+        stop()
+        return
+      }
+
+      button.disabled = true
+      try {
+        const midiJs = await loadMidiJs()
+        midiJs.stop()
+        midiJs.play(button.dataset[`midi${select.value[0].toUpperCase()}${select.value.slice(1)}`])
+        setPlaying(true)
+      } catch (err) {
+        console.error('[VideTranscr] MIDI playback failed', err)
+      } finally {
+        button.disabled = false
+      }
+    })
+
+    select.addEventListener('change', () => {
+      if (isPlaying) stop()
+    })
   }
 
   /**
